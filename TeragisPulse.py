@@ -17,6 +17,10 @@ import time
 import logging
 from utils import get_formatted_date, get_time_with_date, format_name_short
 from reports import generate_daily_report
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv()
 
 def ensure_single_instance():
     # Создаем имя файла блокировки во временной директории ОС
@@ -58,6 +62,8 @@ else:
     from tg_bot import TelegramBot
 
 from report_manager import ReportManager
+from proxy_manager import ProxyManager
+from alarm_manager import AlarmManager
 # ---------------------------
 
 customtkinter.set_appearance_mode("Dark")
@@ -315,13 +321,13 @@ class App(customtkinter.CTk):
         import time
         from identification import identification_func
 
-        # Параметры подключения из твоего конфига
+        # Параметры подключения из .env с фолбеком на старый конфиг
         conn_params = {
-            "user": config_init.get('db', 'db_user'),
-            "password": config_init.get('db', 'db_password'),
-            "dbname": config_init.get('db', 'database'),
-            "host": config_init.get('db', 'db_host'),
-            "port": config_init.get('db', 'db_port')
+            "user": os.getenv('DB_USER', config_init.get('db', 'db_user', fallback='')),
+            "password": os.getenv('DB_PASS', config_init.get('db', 'db_password', fallback='')),
+            "dbname": os.getenv('DB_NAME', config_init.get('db', 'database', fallback='')),
+            "host": os.getenv('DB_HOST', config_init.get('db', 'db_host', fallback='')),
+            "port": os.getenv('DB_PORT', config_init.get('db', 'db_port', fallback=''))
         }
 
         while True:

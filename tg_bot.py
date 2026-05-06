@@ -36,8 +36,8 @@ PROXIES = {
 
 class TelegramBot:
     def __init__(self, config, list_callback=None, status_callback=None, on_treatment_callback=None):
-        self._token = config.get('telegram', 'bot_token', fallback='').strip()
-        raw_ids = config.get('telegram', 'admin_ids', fallback='')
+        self._token = os.getenv('TG_BOT_TOKEN', config.get('telegram', 'bot_token', fallback='')).strip()
+        raw_ids = os.getenv('TG_ADMIN_IDS', config.get('telegram', 'admin_ids', fallback=''))
         self._admin_ids = [int(x.strip()) for x in raw_ids.split(',') if x.strip().lstrip('-').isdigit()]
 
         self._interval_sec = config.getint('telegram', 'interval_seconds', fallback=0) or \

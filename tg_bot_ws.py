@@ -45,21 +45,21 @@ class TelegramBot:
     _RECONNECT_DELAYS = [15, 30, 60, 120, 300]
 
     def __init__(self, config, list_callback=None, status_callback=None, on_treatment_callback=None):
-        # 1. Настройки из конфига
-        self._config = config  # Сохраняем весь конфиг для доступа к ID каналов
-        self._token = config.get('telegram', 'bot_token', fallback='')
-        self._admin_id = config.getint('telegram', 'admin_ids', fallback=0)
-        self._api_id = config.getint('telegram', 'api_id', fallback=0)
-        self._api_hash = config.get('telegram', 'api_hash', fallback='')
+        # 1. Настройки из конфига и .env (приоритет .env)
+        self._config = config
+        self._token = os.getenv('TG_BOT_TOKEN', config.get('telegram', 'bot_token', fallback=''))
+        self._admin_id = int(os.getenv('TG_ADMIN_IDS', config.get('telegram', 'admin_ids', fallback='0')))
+        self._api_id = int(os.getenv('TG_API_ID', config.get('telegram', 'api_id', fallback='0')))
+        self._api_hash = os.getenv('TG_API_HASH', config.get('telegram', 'api_hash', fallback=''))
         
         # 2. Настройки прокси
-        self._proxy_host = config.get('telegram', 'proxy_host', fallback='127.0.0.1')
-        self._proxy_port = config.getint('telegram', 'proxy_port', fallback=8888)
-        self._proxy_secret = config.get('telegram', 'proxy_secret', fallback='')
+        self._proxy_host = os.getenv('PROXY_HOST', config.get('telegram', 'proxy_host', fallback='127.0.0.1'))
+        self._proxy_port = int(os.getenv('PROXY_PORT', config.get('telegram', 'proxy_port', fallback='8888')))
+        self._proxy_secret = os.getenv('PROXY_SECRET', config.get('telegram', 'proxy_secret', fallback=''))
 
-        # 3. Каналы для рассылок (вынесены в config.ini)
-        self.channel_1ro = config.get('telegram', 'channel_id_1ro', fallback='-1001876615218')
-        self.channel_2ro = config.get('telegram', 'channel_id_2ro', fallback='-1001529879326')
+        # 3. Каналы для рассылок
+        self.channel_1ro = os.getenv('TG_CHANNEL_ID_1RO', config.get('telegram', 'channel_id_1ro', fallback='-1001876615218'))
+        self.channel_2ro = os.getenv('TG_CHANNEL_ID_2RO', config.get('telegram', 'channel_id_2ro', fallback='-1001529879326'))
 
         # 4. Обратные вызовы (Callbacks) для связи с GUI и БД
         self.list_callback = list_callback

@@ -5,6 +5,10 @@ import os
 import configparser
 import threading
 from typing import Any, List, Optional, Union, Tuple
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения из .env
+load_dotenv()
 
 # Кастомное исключение для ошибок БД
 class DatabaseError(Exception):
@@ -51,16 +55,22 @@ def _get_pool() -> Optional[pool.ThreadedConnectionPool]:
             logger.error("[DBConnect] Configuration error: [%s] section not found in config.ini.", DB_SECTION)
             return None
             
-        db_config = config[DB_SECTION]
+        # Параметры теперь берутся в приоритете из .env
+        dbname = os.getenv('DB_NAME', config.get(DB_SECTION, 'database', fallback=None))
+        user = os.getenv('DB_USER', config.get(DB_SECTION, 'user', fallback=None))
+        password = os.getenv('DB_PASS', config.get(DB_SECTION, 'password', fallback=None))
+        host = os.getenv('DB_HOST', config.get(DB_SECTION, 'host', fallback=None))
+        port = os.getenv('DB_PORT', config.get(DB_SECTION, 'port', fallback=None))
+
         try:
             _pool = pool.ThreadedConnectionPool(
                 minconn=2,
                 maxconn=10,
-                dbname=db_config.get('database'),
-                user=db_config.get('user'),
-                password=db_config.get('password'),
-                host=db_config.get('host'),
-                port=db_config.get('port'),
+                dbname=dbname,
+                user=user,
+                password=password,
+                host=host,
+                port=port,
                 connect_timeout=5,
                 options='-c statement_timeout=10000'
             )
