@@ -2,7 +2,7 @@
 import tkinter as tk
 from tkinter import messagebox
 import customtkinter
-from DBConnect import execute_query, logger, close_db_pool, DatabaseError
+from database import execute_query, logger, close_db_pool, DatabaseError
 from datetime import datetime, date
 import configparser
 import gc

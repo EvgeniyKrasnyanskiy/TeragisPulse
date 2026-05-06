@@ -1,7 +1,7 @@
 import re
 import logging
 from typing import Tuple, List
-from emodji import physicist_dict, first_ro_dict, second_ro_dict
+from constants import physicist_dict, first_ro_dict, second_ro_dict
 
 logger = logging.getLogger(__name__)
 

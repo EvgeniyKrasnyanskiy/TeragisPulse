@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional, Callable, Set
-from DBConnect import execute_query, DatabaseError
+from database import execute_query, DatabaseError
 from reports import generate_daily_report, load_doctors, extract_doctor
 
 logger = logging.getLogger(__name__)

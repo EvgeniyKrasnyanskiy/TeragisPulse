@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 import os
-from DBConnect import execute_query, DatabaseError 
+from database import execute_query, DatabaseError 
 from identification import identification_func
 
 logger = logging.getLogger("TeragisPulse")
@@ -99,7 +99,7 @@ class BotCommands:
 
         try:
             # Предварительно загружаем справочники врачей для подстраховки
-            from emodji import first_ro_dict, second_ro_dict
+            from constants import first_ro_dict, second_ro_dict
             from identification import identification_func # Импорт функции[cite: 5]
             
             try:
