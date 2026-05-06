@@ -1,0 +1,7 @@
+customtkinter
+psycopg2-binary
+psutil
+telethon
+pillow
+python-socks
+cryptg
