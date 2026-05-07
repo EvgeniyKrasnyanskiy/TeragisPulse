@@ -264,6 +264,7 @@ class BotCommands:
         query = """
             SELECT 
                 TO_CHAR(tc.visitdate, 'DD.MM.YYYY') as day_group,
+                tp.patient_id,
                 (tp.surname || ' ' || COALESCE(tp.forename, '') || ' ' || COALESCE(tp.title, '')) as fio,
                 TO_CHAR(tp.birthdate, 'DD.MM.YYYY') as bd,
                 CASE 
@@ -301,19 +302,22 @@ class BotCommands:
 
             final_rows = []
             current_day = ""
-            seen_fios = set() # Для удаления дубликатов по ФИО
+            seen_patients = set() # Используем patient_id для 100% точности
             unique_patients_count = 0
             
             for row in res:
-                day_str, fio, bd, sex, s_name, d_per_fr, p_fr, f_fr, c_start, c_end = row
-                fio_upper = fio.strip().upper()
-
-                # Проверка на дубликаты ФИО
-                if fio_upper in seen_fios:
+                # row[0] - day_group, row[1] - patient_id, row[2] - fio...
+                day_str = row[0]
+                p_id = row[1]
+                fio, bd, sex, s_name, d_per_fr, p_fr, f_fr, c_start, c_end = row[2:]
+                
+                # ГЛОБАЛЬНАЯ ПРОВЕРКА ДУБЛИКАТОВ
+                if p_id in seen_patients:
                     continue
-                seen_fios.add(fio_upper)
+                seen_patients.add(p_id)
                 unique_patients_count += 1
                 
+                # Добавляем заголовок дня только если нашли в нем уникального пациента
                 if day_str != current_day:
                     if current_day != "": 
                         final_rows.append([""] * 8)
@@ -323,7 +327,7 @@ class BotCommands:
                 accumulated_dose = float(d_per_fr) * int(f_fr)
                 fr_format = f"'{f_fr} / {p_fr}" 
                 
-                final_rows.append([fio_upper, bd, sex, s_name, round(accumulated_dose, 2), fr_format, c_start, c_end])
+                final_rows.append([fio.upper(), bd, sex, s_name, round(accumulated_dose, 2), fr_format, c_start, c_end])
 
             final_rows.append([""] * 8)
             final_rows.append([f"ВСЕГО ПАЦИЕНТОВ - {unique_patients_count}", "", "", "", "", "", "", ""])
