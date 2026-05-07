@@ -10,6 +10,7 @@ from collections import Counter
 import winsound 
 import threading
 import os
+import sys
 import psutil
 import tempfile
 import subprocess
@@ -21,6 +22,9 @@ from dotenv import load_dotenv
 
 # Загрузка переменных окружения
 load_dotenv()
+
+# Глобальная переменная для удержания файла блокировки
+_lock_f = None
 
 def ensure_single_instance():
     # Создаем имя файла блокировки во временной директории ОС
