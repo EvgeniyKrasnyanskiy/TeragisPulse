@@ -9,3 +9,7 @@ xmtproto/
 xray/
 doctors.txt
 dev_docs/
+schema_VERI.sql
+errors.txt
+constants.py
+config.ini

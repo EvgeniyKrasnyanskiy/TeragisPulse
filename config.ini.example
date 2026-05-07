@@ -1,0 +1,36 @@
+[postgresql]
+# Эти данные подтягиваются из .env или прописываются здесь
+host = 127.0.0.1
+database = teragis_db
+user = postgres
+password = password
+port = 5432
+
+[window]
+width = 1200
+height = 850
+title = TeragisPulse
+
+[table_main]
+col_width = 115
+row_height = 30
+header_font_size = 13
+cell_font_size = 18
+
+[table_clients]
+col_width = 200
+row_height = 30
+header_font_size = 12
+cell_font_size = 12
+max_chars_fio = 25
+max_chars_comment = 45
+
+[status_colors]
+Completed = #ff8e8a
+On_Treatment = #66ff66
+
+[telegram]
+use_ws = True
+# Интервалы обновлений
+interval_seconds = 5
+no_change_minutes = 30

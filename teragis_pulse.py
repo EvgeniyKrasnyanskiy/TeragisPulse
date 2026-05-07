@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import messagebox
 import customtkinter
 from database import execute_query, logger, close_db_pool, DatabaseError
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import configparser
 import gc
 from collections import Counter
@@ -168,11 +168,13 @@ class App(customtkinter.CTk):
             self.initial_h = self.config.getint('window', 'height', fallback=660)
             self.geometry(f"{self.initial_w}x{self.initial_h}")
             self.title(self.config.get('window', 'title', fallback='TeragisPulse'))
+            self.resizable(False, False)
         except Exception:
             self.initial_w = 1780
             self.initial_h = 660
             self.geometry(f"{self.initial_w}x{self.initial_h}")
             self.title("TeragisPulse")
+            self.resizable(False, False)
 
         # 2. Загрузка визуальных параметров (цвета, шрифты)
         self.colors = self.load_colors()
@@ -277,7 +279,7 @@ class App(customtkinter.CTk):
 
         # Запуск циклов обновления через небольшую задержку, когда окно уже готово
         self.after(100, self.update_data)                
-        self.after(100, self.update_on_treatment_label_loop)
+        self.update_on_treatment_label_loop() # Сразу запускаем первый круг обновления
         self.after(200, self.alarm_manager.tick)
         self.after(500, self.report_manager.schedule_reports)
 
@@ -458,7 +460,15 @@ class App(customtkinter.CTk):
             font=("Arial", 12),
             text_color="#4CAF50"
         )
-        self.db_status_label.pack(side=tk.LEFT, padx=(10, 5))
+        self.db_status_label.pack(side=tk.LEFT, padx=(10, 10))
+
+        # ПРЕДПОЛАГАЕМОЕ ВРЕМЯ ЗАВЕРШЕНИЯ (Задача 13)
+        self.shift_end_label = customtkinter.CTkLabel(
+            settings_frame, text="🏁 Конец в: расчет...",
+            font=("Arial", 13, "bold"),
+            text_color="#FFD700"
+        )
+        self.shift_end_label.pack(side=tk.LEFT, padx=(10, 5))
 
         self._attach_log_handler()
 
@@ -1139,11 +1149,11 @@ class App(customtkinter.CTk):
           AND tc.calendar_status_id = %s;
         """
         
-        query_count_planned = """
+        query_count_planned = f"""
         SELECT COUNT(DISTINCT ts.patient_id)
         FROM tcalendar tc
         JOIN tseries ts ON tc.series_id = ts.series_id
-        WHERE tc.visitdate::date = CURRENT_DATE AND tc.calendar_status_id = 1;
+        WHERE tc.visitdate::date = CURRENT_DATE AND tc.calendar_status_id = {self.STATUS_PLANNED_ID};
         """
         
         try:
@@ -1201,16 +1211,37 @@ class App(customtkinter.CTk):
                         self.tg_bot.trigger_force_update()
 
 
-            # 1. ПРОВЕРКА ОСТАТКА ПАЦИЕНТОВ (Planned)
+            # 1. ПРОВЕРКА ОСТАТКА ПАЦИЕНТОВ (Planned) И РАСЧЕТ ОКОНЧАНИЯ
             try:
+                # Количество оставшихся
                 planned_res = execute_query(query_count_planned, ())
+                
+                # 1.2 Суммарная экспозиция ОСТАВШИХСЯ (для расчета окончания)
+                query_exp_remaining = f'''
+                    SELECT SUM(CAST(tp_last.value_plan AS FLOAT))
+                    FROM (
+                        SELECT DISTINCT ON (tf.field_id, tp.par_id) tp.value_plan
+                        FROM tcalendar tc
+                        JOIN tseries ts ON tc.series_id = ts.series_id
+                        JOIN tfield tf ON ts.series_id = tf.series_id
+                        JOIN tplan tp ON tf.field_id = tp.field_id
+                        WHERE tc.visitdate = CURRENT_DATE
+                          AND tc.calendar_status_id = {self.STATUS_PLANNED_ID}
+                          AND tp.par_id = 'SH'
+                        ORDER BY tf.field_id, tp.par_id, tp.insert_tms DESC
+                    ) as tp_last
+                '''
+                exp_res = execute_query(query_exp_remaining, ())
+                
                 self._set_db_status(True)
             except DatabaseError:
                 self._set_db_status(False)
                 return
                 
+            # 1. ОБРАБОТКА РЕЗУЛЬТАТОВ ПЛАНИРОВАНИЯ
+            remaining_count = 0
             if planned_res and isinstance(planned_res, list):
-                remaining_count = planned_res[0][0]
+                remaining_count = int(planned_res[0][0])
 
                 if not hasattr(self, 'last_remaining_count'): 
                     self.last_remaining_count = remaining_count
@@ -1222,7 +1253,7 @@ class App(customtkinter.CTk):
                         if bot_state == "connected":
                             self.tg_bot.trigger_force_update()
                             self.last_remaining_count = remaining_count
-                
+
                 # Звуковое уведомление об окончании пациентов
                 if remaining_count > self.LOW_PATIENTS_THRESHOLD:
                     self.low_patients_notified = False
@@ -1232,6 +1263,25 @@ class App(customtkinter.CTk):
                             winsound.Beep(1800, 200)
                             time.sleep(0.1)
                     self.low_patients_notified = True
+
+            # 1.2 РАСЧЕТ ВРЕМЕНИ ЗАВЕРШЕНИЯ СМЕНЫ (Задача 13)
+            try:
+                raw_exp = float(exp_res[0][0]) if exp_res and exp_res[0][0] is not None else 0
+                exp_sec = raw_exp / 10.0
+                
+                if remaining_count > 0:
+                    # Формула: экспозиция + кол-во * 7 мин (среднее время на укладку каждого пациента)
+                    pauses_sec = remaining_count * 7 * 60
+                    total_rem_sec = exp_sec + pauses_sec
+                    
+                    finish_dt = datetime.now() + timedelta(seconds=total_rem_sec)
+                    finish_str = finish_dt.strftime("%H:%M")
+                    self.after(0, lambda s=finish_str: self.shift_end_label.configure(text=f"🏁 Конец в: {s}"))
+                else:
+                    self.after(0, lambda: self.shift_end_label.configure(text="🏁 Конец в: --:--"))
+            except Exception as e:
+                logger.debug(f"[TPulse] Ошибка расчета времени окончания: {e}")
+                self.after(0, lambda: self.shift_end_label.configure(text="🏁 Конец в: --:--"))
 
             # 2. ЛОГИКА ОПРЕДЕЛЕНИЯ АКТУАЛЬНОГО ПАЦИЕНТА
             try:
@@ -1374,10 +1424,18 @@ class App(customtkinter.CTk):
             elif series_key == "2": ser_filter = "ts.name LIKE '2%%'"
             elif series_key == "Other": ser_filter = "ts.name NOT LIKE '1%%' AND ts.name NOT LIKE '2%%'"
 
-            # 1. Основной запрос данных
+            # 1. Основной запрос данных + сумма АКТУАЛЬНОЙ экспозиции (последние значения 'SH')
             query = f'''
                 SELECT tu.surname, tu.forename, ts.name, tcs.calendar_status_id, 
-                       tcs.name, ts.note, tu.patient_id, tc.series_id
+                       tcs.name, ts.note, tu.patient_id, tc.series_id,
+                       (SELECT SUM(CAST(tp_last.value_plan AS FLOAT))
+                        FROM (
+                            SELECT DISTINCT ON (field_id, par_id) value_plan
+                            FROM tplan
+                            WHERE field_id IN (SELECT field_id FROM tfield WHERE series_id = ts.series_id)
+                              AND par_id = 'SH'
+                            ORDER BY field_id, par_id, insert_tms DESC
+                        ) as tp_last) as total_exposure
                 FROM tcalendar tc
                 INNER JOIN tseries ts ON tc.series_id = ts.series_id
                 INNER JOIN tpatient tu ON ts.patient_id = tu.patient_id
@@ -1557,7 +1615,37 @@ class App(customtkinter.CTk):
             font=("Helvetica", 14, "bold"),
             text_color="#AAAAAA" # Светло-серый цвет
         )
-        stats_label.pack(side=tk.LEFT, padx=20)
+        stats_label.pack(side=tk.LEFT, padx=15)
+
+        # 4. СУММАРНАЯ ЭКСПОЗИЦИЯ (Задача 12)
+        # Делим на 10, так как в Teragis параметр 'SH' хранится в децисекундах (0.1 сек)
+        raw_val = sum(float(row[8]) for row in data if row[8] is not None)
+        total_seconds = raw_val / 10.0
+        
+        h = int(total_seconds // 3600)
+        m = int((total_seconds % 3600) // 60)
+        
+        # РАСЧЕТ ВРЕМЕНИ ОПЕРАТОРА (Экспозиция + паузы между пациентами)
+        # Применяется только для списка "Запланированных"
+        operator_info = ""
+        if status_key == 'Planned' and total_p > 0:
+            # Паузы: (кол-во - 1) * 7 минут
+            pauses_seconds = (total_p - 1) * 7 * 60
+            op_total_seconds = total_seconds + pauses_seconds
+            
+            op_h = int(op_total_seconds // 3600)
+            op_m = int((op_total_seconds % 3600) // 60)
+            operator_info = f"  (с укладкой ~{op_h:02d}:{op_m:02d})"
+
+        exposure_text = f"Σ экспозиций: {h:02d}:{m:02d}{operator_info}"
+        
+        exposure_label = customtkinter.CTkLabel(
+            tool_frame,
+            text=exposure_text,
+            font=("Helvetica", 14, "bold"),
+            text_color="#FFD700" # Золотистый цвет
+        )
+        exposure_label.pack(side=tk.LEFT, padx=15)
 
         # ОБЛАСТЬ ТАБЛИЦЫ 
         canvas_frame = tk.Frame(self.client_window, bg="#2E2E2E")
@@ -1832,13 +1920,19 @@ class App(customtkinter.CTk):
         if isinstance(patient_info, list) and patient_info and patient_info[0]:
             patient_fio = f"{patient_info[0][0]} {patient_info[0][1]}"
  
-        # ИЗМЕНЕНИЕ 1: добавлен ts.name 
+        # ИЗМЕНЕНИЕ 1: добавлен ts.name и расчет Время (факт)
         query = '''
             SELECT 
                 tc.visitdate,
                 tc.visittime,
                 ts.name,                  -- Серия
                 tcs.name,                 -- Статус
+                (SELECT TO_CHAR(MAX(tfp.insert_tms), 'HH24:MI:SS')
+                 FROM tfraction tf
+                 JOIN tfraction_part tfp USING (fraction_id)
+                 WHERE tf.field_id IN (SELECT field_id FROM tfield WHERE series_id = tc.series_id)
+                   AND tf.fraction_order = tc.fraction_order
+                ) as fact_time,           -- Время (факт)
                 tc.note
             FROM tcalendar tc
             JOIN tseries ts ON tc.series_id = ts.series_id
@@ -1865,9 +1959,9 @@ class App(customtkinter.CTk):
         frame = customtkinter.CTkScrollableFrame(cal_win)
         frame.pack(fill="both", expand=True)
  
-        # ИЗМЕНЕНИЕ 2: добавлен заголовок "Серия" 
-        headers = ["Дата", "Время", "Серия", "Статус", "Примечание"]
-        col_widths = [100, 100, 150, 150, 300]
+        # ИЗМЕНЕНИЕ 2: добавлены заголовки
+        headers = ["Дата", "Время", "Серия", "Статус", "Время (факт)", "Примечание"]
+        col_widths = [90, 80, 130, 130, 110, 250]
  
         for i, h in enumerate(headers):
             customtkinter.CTkLabel(

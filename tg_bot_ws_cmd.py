@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*- 
-# tg_bot_ws_commands.py
+# tg_bot_ws_cmd.py
 from datetime import datetime, time as dt_time
 from telethon import events
 import asyncio
@@ -262,6 +262,26 @@ class BotCommands:
 
         # Безопасный SQL запрос на чтение
         query = """
+            WITH patient_course_stats AS (
+                -- Считаем общую полученную дозу и фракции по ВСЕМ сериям пациента за всё время
+                SELECT 
+                    ts.patient_id,
+                    COUNT(tc.calendar_id) as total_released_fr,
+                    SUM(ROUND((ts.totaldose / NULLIF(ts.fractionsnumber, 0))::numeric, 2)) as total_received_dose,
+                    MIN(ts.series_id) as first_series_id
+                FROM public.tcalendar tc
+                JOIN public.tseries ts ON tc.series_id = ts.series_id
+                WHERE tc.calendar_status_id = 4
+                GROUP BY ts.patient_id
+            ),
+            first_series_data AS (
+                -- Берем предписанные дозу и фракции именно из ПЕРВОЙ серии
+                SELECT 
+                    series_id,
+                    totaldose as first_plan_dose,
+                    fractionsnumber as first_plan_fr
+                FROM public.tseries
+            )
             SELECT 
                 TO_CHAR(tc.visitdate, 'DD.MM.YYYY') as day_group,
                 tp.patient_id,
@@ -273,14 +293,19 @@ class BotCommands:
                     ELSE tp.sex 
                 END as gender,
                 ts.name as series_name,
-                ROUND((ts.totaldose / NULLIF(ts.fractionsnumber, 0))::numeric, 2) as dose_per_fr,
-                ts.fractionsnumber as plan_fr,
-                ROW_NUMBER() OVER (PARTITION BY ts.series_id ORDER BY tc.visitdate, tc.insert_tms) as fact_fr,
+                -- Новые поля статистики
+                fsd.first_plan_dose,
+                pcs.total_received_dose,
+                pcs.total_released_fr,
+                fsd.first_plan_fr,
+                -- Даты курса (по конкретной серии)
                 TO_CHAR(MIN(tc.visitdate) OVER (PARTITION BY ts.series_id), 'DD.MM.YYYY') as course_start,
                 TO_CHAR(MAX(tc.visitdate) OVER (PARTITION BY ts.series_id), 'DD.MM.YYYY') as course_end
             FROM public.tcalendar tc
             JOIN public.tseries ts ON tc.series_id = ts.series_id
             JOIN public.tpatient tp ON ts.patient_id = tp.patient_id
+            JOIN patient_course_stats pcs ON tp.patient_id = pcs.patient_id
+            JOIN first_series_data fsd ON pcs.first_series_id = fsd.series_id
             WHERE tc.calendar_status_id = 4 
               AND tc.visitdate BETWEEN %s AND %s
               AND (
@@ -309,7 +334,7 @@ class BotCommands:
                 # row[0] - day_group, row[1] - patient_id, row[2] - fio...
                 day_str = row[0]
                 p_id = row[1]
-                fio, bd, sex, s_name, d_per_fr, p_fr, f_fr, c_start, c_end = row[2:]
+                fio, bd, sex, s_name, p_dose, r_dose, r_fr, p_fr, c_start, c_end = row[2:]
                 
                 # ГЛОБАЛЬНАЯ ПРОВЕРКА ДУБЛИКАТОВ
                 if p_id in seen_patients:
@@ -324,10 +349,13 @@ class BotCommands:
                     final_rows.append([f"--- ДЕНЬ: {day_str} ---", "", "", "", "", "", "", ""])
                     current_day = day_str
                 
-                accumulated_dose = float(d_per_fr) * int(f_fr)
-                fr_format = f"'{f_fr} / {p_fr}" 
+                # Форматируем Дозу: Предписано(1-я сер) / Получено(всего)
+                dose_format = f"{p_dose} / {round(float(r_dose), 2)}"
                 
-                final_rows.append([fio.upper(), bd, sex, s_name, round(accumulated_dose, 2), fr_format, c_start, c_end])
+                # Форматируем Фракции: Отпущено(всего) / Предписано(1-я сер)
+                fr_format = f"'{r_fr} / {p_fr}" 
+                
+                final_rows.append([fio.upper(), bd, sex, s_name, dose_format, fr_format, c_start, c_end])
 
             final_rows.append([""] * 8)
             final_rows.append([f"ВСЕГО ПАЦИЕНТОВ - {unique_patients_count}", "", "", "", "", "", "", ""])

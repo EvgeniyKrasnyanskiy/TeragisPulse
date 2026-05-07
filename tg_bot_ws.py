@@ -31,7 +31,7 @@ except ImportError:
     # Если файла нет в папке, бот продолжит работать, но без отправки новых серий
     identification_func = None
     
-from tg_bot_ws_commands import BotCommands
+from tg_bot_ws_cmd import BotCommands
 
 logger = logging.getLogger(__name__)
 DIVIDER = "─────────────────────"
@@ -230,7 +230,9 @@ class TelegramBot:
                 )
 
                 # logger.info("[Bot_WS] Попытка авторизации в Telegram")
-                await self.client.start(bot_token=self._token)
+                await self.client.connect()
+                if not await self.client.is_user_authorized():
+                    await self.client.sign_in(bot_token=self._token)
                 
                 # Здесь инициализируем команды
                 self.commands.client = self.client
