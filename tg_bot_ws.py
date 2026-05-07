@@ -91,7 +91,9 @@ class TelegramBot:
             client=None, 
             admin_ids=[str(self._admin_id)], 
             list_callback=self.list_callback,
-            build_message_func=self._build_message
+            build_message_func=self._build_message,
+            channel_1ro=self.channel_1ro,
+            channel_2ro=self.channel_2ro
         )
 
     # --- РАЗДЕЛ 1: УПРАВЛЕНИЕ ЗАПУСКОМ/ОСТАНОВКОЙ ---

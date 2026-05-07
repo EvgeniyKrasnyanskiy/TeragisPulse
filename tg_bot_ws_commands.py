@@ -19,6 +19,8 @@ class BotCommands:
         self.list_callback = list_callback
         self.build_message = build_message_func
         self.execute_query = execute_query
+        self.channel_1ro = kwargs.get('channel_1ro')
+        self.channel_2ro = kwargs.get('channel_2ro')
         
         self._cmd_list_msg_id = None
         self._cmd_list_date = None
@@ -29,9 +31,10 @@ class BotCommands:
             (self.help_handler, '/help'),
             (self.ping_handler, '/ping'),
             (self.list_handler, r'/list(?:\s+(\d{2}\.\d{2}))?'),
-            (self.report_list_handler, r'/report_list(?:\s+.*)?'),
-            (self.report_handler, r'/report(?:\s+.*)?'),
-            (self.edit_handler, r'/edit(?:\s+.*)?')
+            (self.report_list_handler, r'/excel(?:\s+.*)?'),
+            (self.report_handler, r'/summary(?:\s+.*)?'),
+            (self.edit_handler, r'/edit(?:\s+.*)?'),
+            (self.msg_to_group_handler, r'/msg_to_group(?:\s+.*)?')
         ]
         
         for handler, pattern in handlers:
@@ -46,7 +49,9 @@ class BotCommands:
         return str(event.sender_id) in self.admin_ids
 
     async def _silent_delete(self, event):
-        try: await event.delete()
+        try: 
+            await asyncio.sleep(10)
+            await event.delete()
         except: pass
 
     def _parse_date(self, d_str):
@@ -65,11 +70,11 @@ class BotCommands:
 
     async def report_handler(self, event):
         """Команда формирования отчета"""
-        await self._silent_delete(event)
+        asyncio.create_task(self._silent_delete(event))
         args = event.message.message.split()
         
         if len(args) < 2:
-            return await event.respond("ℹ️ Пример: <code>/report 1</code> или <code>/report 2 01.05-15.05</code>", parse_mode='html')
+            return await event.respond("ℹ️ Пример: <code>/summary 1</code> или <code>/summary 2 01.05-15.05</code>", parse_mode='html')
 
         target_dept = args[1]
         if target_dept not in ['1', '2']:
@@ -164,25 +169,27 @@ class BotCommands:
             await event.respond("❌ Ошибка при обработке данных.")
 
     async def help_handler(self, event):
-        await self._silent_delete(event)
+        asyncio.create_task(self._silent_delete(event))
         text = ("<b>Доступные команды:</b>\n\n"
                 "/list — список на сегодня\n"
                 "/list <07.04> — список на дату\n"
-                "/report <1> <01.04> — кол-во за день\n"
-                "/report <1> <02.04-20.04> — за период\n"
-                "/edit <ссылка> <текст>— редактировать\n"
+                "/summary <1> <01.04> — кол-во за день\n"
+                "/summary <1> <02.04-20.04> — за период\n"
+                "/excel <1> <05.05.2026> — отчет в файл\n"
+                "/edit <ссылка> <текст> — редактировать\n"
+                "/msg_to_group <1/2> <текст> — сообщение в группу\n"
                 "/ping — статус связи\n"
                 "/help — справка")
         await event.respond(text, parse_mode='html')
 
     async def ping_handler(self, event):
-        await self._silent_delete(event)
+        asyncio.create_task(self._silent_delete(event))
         start_time = event.message.date.timestamp()
         latency = max(0, round((datetime.now().timestamp() - start_time) * 1000))
         await event.respond(f"🏓 Pong! ({latency} ms)")
 
     async def edit_handler(self, event):
-        await self._silent_delete(event)
+        asyncio.create_task(self._silent_delete(event))
         raw_text = event.message.message
         args = re.sub(r'^/edit\s*', '', raw_text).strip()
         if event.is_reply:
@@ -190,7 +197,7 @@ class BotCommands:
             await self.client.edit_message(event.chat_id, reply_msg.id, args, parse_mode='html')
 
     async def list_handler(self, event):
-        await self._silent_delete(event)
+        asyncio.create_task(self._silent_delete(event))
         date_param = event.pattern_match.group(1) 
         target_date = date_param if date_param else datetime.now().strftime("%d.%m")
         raw_data = await asyncio.to_thread(self.list_callback, target_date)
@@ -209,14 +216,37 @@ class BotCommands:
                 except: pass
                 finally:
                     self._cmd_list_msg_id, self._cmd_list_date = None, None
+
+    async def msg_to_group_handler(self, event):
+        """Отправка произвольного сообщения в группу 1 или 2"""
+        asyncio.create_task(self._silent_delete(event))
+        raw_text = event.message.message
+        # Парсим команду: /msg_to_group <номер> <текст>
+        match = re.match(r'^/msg_to_group\s+([12])\s+(.+)', raw_text, re.DOTALL)
+        if not match:
+            return await event.respond("ℹ️ Пример: <code>/msg_to_group 1 Важное сообщение</code>", parse_mode='html')
+        
+        dept_num = match.group(1)
+        msg_text = match.group(2).strip()
+        
+        target_chat = self.channel_1ro if dept_num == '1' else self.channel_2ro
+        if not target_chat:
+            return await event.respond("❌ ID группы не настроен.")
+
+        try:
+            await self.client.send_message(int(target_chat), msg_text, parse_mode='html')
+            await event.respond(f"✅ Сообщение отправлено в группу {dept_num}РО.")
+        except Exception as e:
+            logger.error(f"[Bot_CMD] Ошибка отправки в группу: {e}")
+            await event.respond(f"❌ Ошибка отправки: {e}")
                     
     async def report_list_handler(self, event):
         """Оптимизированная команда /report_list без технических меток в коде"""
-        await self._silent_delete(event)
+        asyncio.create_task(self._silent_delete(event))
         args = event.message.message.split()
         
         if len(args) < 3:
-            return await event.respond("ℹ️ Пример: <code>/report_list 1 05.05.2026</code>", parse_mode='html')
+            return await event.respond("ℹ️ Пример: <code>/excel 1 05.05.2026</code>", parse_mode='html')
 
         dept_num = args[1]
         period_raw = args[2]
@@ -253,15 +283,16 @@ class BotCommands:
             WHERE tc.calendar_status_id = 4 
               AND tc.visitdate BETWEEN %s AND %s
               AND (
-                  (%s = '1' AND ts.name LIKE '1%%') OR 
-                  (%s = '2' AND ts.name LIKE '2%%')
+                  (%s = '1' AND ts.name LIKE %s) OR 
+                  (%s = '2' AND ts.name LIKE %s)
               )
             ORDER BY tc.visitdate ASC, fio ASC;
         """
 
         try:
             try:
-                res = await asyncio.to_thread(self.execute_query, query, (start_date, end_date, dept_num, dept_num))
+                # Передаем 6 параметров: start, end, dept, '1%', dept, '2%'
+                res = await asyncio.to_thread(self.execute_query, query, (start_date, end_date, dept_num, '1%', dept_num, '2%'))
             except DatabaseError:
                 return await event.respond("📭 Ошибка подключения к базе данных или превышен таймаут.")
 
@@ -270,9 +301,18 @@ class BotCommands:
 
             final_rows = []
             current_day = ""
+            seen_fios = set() # Для удаления дубликатов по ФИО
+            unique_patients_count = 0
             
             for row in res:
                 day_str, fio, bd, sex, s_name, d_per_fr, p_fr, f_fr, c_start, c_end = row
+                fio_upper = fio.strip().upper()
+
+                # Проверка на дубликаты ФИО
+                if fio_upper in seen_fios:
+                    continue
+                seen_fios.add(fio_upper)
+                unique_patients_count += 1
                 
                 if day_str != current_day:
                     if current_day != "": 
@@ -281,11 +321,12 @@ class BotCommands:
                     current_day = day_str
                 
                 accumulated_dose = float(d_per_fr) * int(f_fr)
-                # Добавляем одинарную кавычку для защиты от автоформата даты в Excel
                 fr_format = f"'{f_fr} / {p_fr}" 
                 
-                final_rows.append([fio.upper(), bd, sex, s_name, round(accumulated_dose, 2), fr_format, c_start, c_end])
+                final_rows.append([fio_upper, bd, sex, s_name, round(accumulated_dose, 2), fr_format, c_start, c_end])
 
+            final_rows.append([""] * 8)
+            final_rows.append([f"ВСЕГО ПАЦИЕНТОВ - {unique_patients_count}", "", "", "", "", "", "", ""])
             final_rows.append([""] * 8)
             final_rows.append(["ОТЧЕТ СФОРМИРОВАН АВТОМАТИЧЕСКИ", "", "", "", "", "", "", ""])
             final_rows.append([f"Выборка: Отделение {dept_num}, Период {period_raw}", "", "", "", "", "", "", ""])

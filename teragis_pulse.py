@@ -63,7 +63,7 @@ USE_WS = config_init.getboolean('telegram', 'use_ws', fallback=False)
 if USE_WS:
     from tg_bot_ws import TelegramBot
 else:
-    from tg_bot import TelegramBot
+    from tg_bot_xr import TelegramBot
 
 from report_manager import ReportManager
 from proxy_manager import ProxyManager
@@ -1003,18 +1003,16 @@ class App(customtkinter.CTk):
 
     # ЦИКЛ ОБНОВЛЕНИЯ ГЛАВНОЙ ТАБЛИЦЫ (5 сек) 
     def update_data(self, force=False):
-        """
-        Обновление данных главной таблицы.
-        
-        Args:
-            force (bool): Принудительное обновление геометрии окна
-        """
+        """Запуск фонового обновления данных главной таблицы."""
+        threading.Thread(target=self._update_data_worker, args=(force,), daemon=True).start()
+
+    def _update_data_worker(self, force=False):
+        """Воркер для получения данных из БД в фоновом потоке."""
         self.gc_counter += 1
         if self.gc_counter >= 12: 
             gc.collect()
             self.gc_counter = 0
 
-        # SQL-запрос с использованием констант для интервалов
         query = f'''
         WITH RECURSIVE dates AS (
             SELECT CURRENT_DATE - INTERVAL '{self.HISTORY_DAYS} days' AS visitdate
@@ -1032,9 +1030,9 @@ class App(customtkinter.CTk):
         FROM all_dates
         LEFT JOIN (
             SELECT tc.visitdate,
-                COUNT(DISTINCT CASE WHEN ts.name LIKE '1%%' THEN tu.patient_id END) AS "1РО",
-                COUNT(DISTINCT CASE WHEN ts.name LIKE '2%%' THEN tu.patient_id END) AS "2РО",
-                COUNT(DISTINCT CASE WHEN ts.name NOT LIKE '1%%' AND ts.name NOT LIKE '2%%' THEN tu.patient_id END) AS "Другое",
+                COUNT(DISTINCT CASE WHEN ts.name LIKE %s THEN tu.patient_id END) AS "1РО",
+                COUNT(DISTINCT CASE WHEN ts.name LIKE %s THEN tu.patient_id END) AS "2РО",
+                COUNT(DISTINCT CASE WHEN ts.name NOT LIKE %s AND ts.name NOT LIKE %s THEN tu.patient_id END) AS "Другое",
                 COUNT(DISTINCT tu.patient_id) AS "Всего"
             FROM tcalendar tc 
             JOIN tseries ts ON tc.series_id = ts.series_id 
@@ -1047,9 +1045,9 @@ class App(customtkinter.CTk):
         ) AS planned ON all_dates.visitdate = planned.visitdate
         LEFT JOIN (
             SELECT tc.visitdate,
-                COUNT(DISTINCT CASE WHEN ts.name LIKE '1%%' THEN tu.patient_id END) AS "1РО",
-                COUNT(DISTINCT CASE WHEN ts.name LIKE '2%%' THEN tu.patient_id END) AS "2РО",
-                COUNT(DISTINCT CASE WHEN ts.name NOT LIKE '1%%' AND ts.name NOT LIKE '2%%' THEN tu.patient_id END) AS "Другое",
+                COUNT(DISTINCT CASE WHEN ts.name LIKE %s THEN tu.patient_id END) AS "1РО",
+                COUNT(DISTINCT CASE WHEN ts.name LIKE %s THEN tu.patient_id END) AS "2РО",
+                COUNT(DISTINCT CASE WHEN ts.name NOT LIKE %s AND ts.name NOT LIKE %s THEN tu.patient_id END) AS "Другое",
                 COUNT(DISTINCT tu.patient_id) AS "Всего"
             FROM tcalendar tc 
             JOIN tseries ts ON tc.series_id = ts.series_id 
@@ -1062,9 +1060,9 @@ class App(customtkinter.CTk):
         ) AS completed ON all_dates.visitdate = completed.visitdate
         LEFT JOIN (
             SELECT tc.visitdate,
-                COUNT(DISTINCT CASE WHEN ts.name LIKE '1%%' THEN tu.patient_id END) AS "1РО",
-                COUNT(DISTINCT CASE WHEN ts.name LIKE '2%%' THEN tu.patient_id END) AS "2РО",
-                COUNT(DISTINCT CASE WHEN ts.name NOT LIKE '1%%' AND ts.name NOT LIKE '2%%' THEN tu.patient_id END) AS "Другое",
+                COUNT(DISTINCT CASE WHEN ts.name LIKE %s THEN tu.patient_id END) AS "1РО",
+                COUNT(DISTINCT CASE WHEN ts.name LIKE %s THEN tu.patient_id END) AS "2РО",
+                COUNT(DISTINCT CASE WHEN ts.name NOT LIKE %s AND ts.name NOT LIKE %s THEN tu.patient_id END) AS "Другое",
                 COUNT(DISTINCT tu.patient_id) AS "Всего"
             FROM tcalendar tc 
             JOIN tseries ts ON tc.series_id = ts.series_id 
@@ -1078,32 +1076,41 @@ class App(customtkinter.CTk):
         '''
         
         try:
-            data = execute_query(query, (self.STATUS_PLANNED_ID, self.STATUS_COMPLETED_ID))
-            self._set_db_status(True)
+            # Все LIKE паттерны передаем явно
+            params = (
+                '1%', '2%', '1%', '2%', self.STATUS_PLANNED_ID,  # Для planned
+                '1%', '2%', '1%', '2%', self.STATUS_COMPLETED_ID, # Для completed
+                '1%', '2%', '1%', '2%'                           # Для total
+            )
+            data = execute_query(query, params)
+            self.after(0, lambda: self._set_db_status(True))
         except DatabaseError:
-            self._set_db_status(False)
+            self.after(0, lambda: self._set_db_status(False))
+            # Планируем следующую попытку даже при ошибке
+            if not force:
+                self.after(5000, self.update_data)
             return
             
         if isinstance(data, list):
-            logger.debug(f"[TPulse] Получено {len(data)} строк из БД")
-            
-            # Обнаружение дублей
+            # Обнаружение дублей тоже в фоне
             self.duplicate_dates = self.detect_duplicate_bookings()
             
-            # Обрезка до требуемого количества строк
             if len(data) > self.TOTAL_DISPLAY_ROWS:
-                logger.debug(f"[TPulse] Обрезка с {len(data)} до {self.TOTAL_DISPLAY_ROWS} строк")
                 data = data[:self.TOTAL_DISPLAY_ROWS]
 
-            # Обновление геометрии окна при необходимости
-            if force or not self.geometry_set:
-                required_width = self.calculate_required_width()
-                required_height = self.calculate_required_height(len(data))
-                self.adjust_window_geometry(required_width, required_height)
-                self.geometry_set = True
-                
-            self.draw_table(data)
+            # Все операции с GUI (изменение размеров, отрисовка) отправляем в главный поток
+            self.after(0, lambda d=data, f=force: self._update_gui_after_fetch(d, f))
+
+    def _update_gui_after_fetch(self, data, force):
+        """Обновление GUI после успешного получения данных из БД."""
+        if force or not self.geometry_set:
+            required_width = self.calculate_required_width()
+            required_height = self.calculate_required_height(len(data))
+            self.adjust_window_geometry(required_width, required_height)
+            self.geometry_set = True
             
+        self.draw_table(data)
+        
         if not force:
             self.after(5000, self.update_data)
 
@@ -1111,19 +1118,18 @@ class App(customtkinter.CTk):
     def update_on_treatment_label_loop(self):
         """Цикл обновления верхней панели."""
         try:
-            # Просто обновляем данные и планируем следующий запуск каждые 5 секунд
             self.update_on_treatment_label()
             self.after(5000, self.update_on_treatment_label_loop)
-            
         except Exception as e:
             if "invalid command name" not in str(e):
                 logger.error(f"[TPulse] Ошибка в цикле мониторинга: {e}")
-        
+
     def update_on_treatment_label(self):
-        """
-        Обновление табло: логика вытеснения новых ID + тихий старт + ФИО Доктора.
-        """
-        # 1. ОБНОВЛЕННЫЙ ЗАПРОС (ts.note в конце)
+        """Запуск фонового обновления табло."""
+        threading.Thread(target=self._update_on_treatment_label_worker, daemon=True).start()
+
+    def _update_on_treatment_label_worker(self):
+        """Воркер для обновления табло в фоновом потоке."""
         query_active = """
         SELECT tp.surname, tp.forename, ts.name, tp.patient_id, tc.calendar_id, ts.note
         FROM tcalendar tc
@@ -1144,20 +1150,19 @@ class App(customtkinter.CTk):
             now = datetime.now()
             today_date = now.date()
             new_patient_str = ""
-            bot_status_str = "" # Строка специально для Telegram
+            bot_status_str = "" 
             current_patient_id = None
             
-            self._set_db_status(True)
-            
-            # Инициализация переменных состояния
+            # Инициализация переменных состояния (через after для безопасности)
             if not hasattr(self, 'active_calendar_id'): self.active_calendar_id = None
             if not hasattr(self, 'known_ids_today'): self.known_ids_today = set()
             if not hasattr(self, 'last_notified_date'): self.last_notified_date = None
 
-            # КРИТИЧЕСКАЯ ПРАВКА: СМЕНА ДНЯ (ВЫНЕСЕНО В НАЧАЛО)
+            # КРИТИЧЕСКАЯ ПРАВКА: СМЕНА ДНЯ
             if self.last_notified_date != today_date:
                 try:
                     data_startup = execute_query(query_active, (self.STATUS_ON_TREATMENT_ID,))
+                    self.after(0, lambda: self._set_db_status(True))
                     
                     if data_startup and isinstance(data_startup, list):
                         startup_ids = {row[4] for row in data_startup}
@@ -1165,12 +1170,9 @@ class App(customtkinter.CTk):
                         
                         if startup_ids:
                             self.active_calendar_id = max(startup_ids)
-                            # --- НОВАЯ ЛОГИКА ДЛЯ ПЕРВОГО ЗАПУСКА ---
                             active_row = next(r for r in data_startup if r[4] == self.active_calendar_id)
-                            # Распаковываем (обязательно 6 элементов, включая note)
                             surname, forename, s_name, p_id, c_id, note = active_row
                             
-                            # Готовим правильную строку для бота (с Доктором)
                             p_short = format_name_short(f"{surname} {forename}")
                             doc_raw = (note or "").strip().split()
                             limit = 4 if str(s_name).startswith('2') else 3
@@ -1178,12 +1180,10 @@ class App(customtkinter.CTk):
                             
                             bot_status_init = f"{p_short}{doc_display}"
                             self.last_bot_status = bot_status_init
-                            
-                            # Сохраняем имя и сразу передаем боту корректный статус
                             self.last_patient_name = f"{surname} {forename} ({s_name})"
+                            
                             if hasattr(self, 'tg_bot'):
                                 self.tg_bot.set_on_treatment(bot_status_init)
-                            # ----------------------------------------
                     else:
                         self.known_ids_today = set()
                 except DatabaseError:
