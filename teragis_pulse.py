@@ -13,12 +13,12 @@ import os
 import sys
 import psutil
 import tempfile
-import subprocess
 import time
 import logging
 from utils import get_formatted_date, get_time_with_date, format_name_short
 from reports import generate_daily_report
 from dotenv import load_dotenv
+import pyperclip
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -1622,8 +1622,10 @@ class App(customtkinter.CTk):
         raw_val = sum(float(row[8]) for row in data if row[8] is not None)
         total_seconds = raw_val / 10.0
         
-        h = int(total_seconds // 3600)
-        m = int((total_seconds % 3600) // 60)
+        # Используем математическое округление для точности и возвращаем формат ЧЧ:ММ (Задача 15)
+        total_minutes = round(total_seconds / 60)
+        h = total_minutes // 60
+        m = total_minutes % 60
         
         # РАСЧЕТ ВРЕМЕНИ ОПЕРАТОРА (Экспозиция + паузы между пациентами)
         # Применяется только для списка "Запланированных"
@@ -1633,11 +1635,13 @@ class App(customtkinter.CTk):
             pauses_seconds = (total_p - 1) * 7 * 60
             op_total_seconds = total_seconds + pauses_seconds
             
-            op_h = int(op_total_seconds // 3600)
-            op_m = int((op_total_seconds % 3600) // 60)
+            # Округляем время с укладкой также через round()
+            op_total_minutes = round(op_total_seconds / 60)
+            op_h = op_total_minutes // 60
+            op_m = op_total_minutes % 60
             operator_info = f"  (с укладкой ~{op_h:02d}:{op_m:02d})"
 
-        exposure_text = f"Σ экспозиций: {h:02d}:{m:02d}{operator_info}"
+        exposure_text = f"Сумма времени: {h:02d}:{m:02d}{operator_info}"
         
         exposure_label = customtkinter.CTkLabel(
             tool_frame,
@@ -1770,6 +1774,15 @@ class App(customtkinter.CTk):
                                                             fill="black", font=font_cell, anchor=anchor_pos)
                 
                 # Привязка событий
+                
+                # 1. ПКМ — Копирование фамилии пациента (Задача 14)
+                surname = str(row[0]) if row[0] else ""
+                self.canvas_clients.tag_bind(rect, "<Button-3>", 
+                                            lambda e, s=surname: self.copy_to_clipboard_with_hint(s, e))
+                self.canvas_clients.tag_bind(text_item, "<Button-3>", 
+                                            lambda e, s=surname: self.copy_to_clipboard_with_hint(s, e))
+
+                # 2. Двойной клик — Попап комментария или Календарь
                 if c_idx == 4:
                     self.canvas_clients.tag_bind(rect, "<Double-1>", 
                                                 lambda e, txt=full_comment: self.show_comment_popup(txt))
@@ -1882,6 +1895,11 @@ class App(customtkinter.CTk):
         text_to_copy = header + body + footer
         
         # 4. Копирование в буфер
+        try:
+            pyperclip.copy(text_to_copy)
+        except Exception as e:
+            logger.debug(f"[Clipboard] pyperclip error (full list): {e}")
+
         self.clipboard_clear()
         self.clipboard_append(text_to_copy)
         self.update()
@@ -2013,10 +2031,68 @@ class App(customtkinter.CTk):
 
         self._bind_mousewheel_scroll(frame, frame)
 
+    def transliterate(self, text):
+        """Простая транслитерация кириллицы в латиницу (Задача 14)."""
+        mapping = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
+            'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+            'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+            'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+            'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'E',
+            'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+            'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+            'Ф': 'F', 'Х': 'H', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Sch',
+            'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+        }
+        return "".join(mapping.get(c, c) for c in text)
 
+    def copy_to_clipboard_with_hint(self, text, event):
+        """Копирует фамилию в буфер обмена стандартным методом (Задача 14)."""
+        try:
+            text_str = str(text).strip()
+            is_shift = bool(event.state & 0x0001)
+            
+            if is_shift:
+                text_str = self.transliterate(text_str)
+                hint_msg = "Транслит скопирован"
+            else:
+                hint_msg = "Фамилия скопирована"
 
+            # Копирование через pyperclip (наиболее надежный кроссплатформенный способ)
+            try:
+                pyperclip.copy(text_str)
+            except Exception as e:
+                logger.debug(f"[Clipboard] pyperclip error: {e}")
 
+            # Дублируем через встроенный метод Tkinter для максимальной совместимости с VNC
+            self.clipboard_clear()
+            self.clipboard_append(text_str)
+            self.update()
 
+            self._show_temp_hint(hint_msg, event.x_root, event.y_root)
+        except Exception as e:
+            logger.error(f"[TPulse] Ошибка копирования: {e}")
+
+    def _show_temp_hint(self, message, x, y):
+        """Всплывающее окно-подсказка возле курсора."""
+        hint = customtkinter.CTkToplevel(self)
+        hint.overrideredirect(True)
+        hint.attributes("-topmost", True)
+        # Смещение на 15 пикселей от курсора
+        hint.geometry(f"+{x+15}+{y+15}")
+        hint.configure(fg_color="#333333")
+        
+        label = customtkinter.CTkLabel(
+            hint, text=message, corner_radius=6, 
+            fg_color="#333333", text_color="white",
+            font=("Arial", 12, "bold"),
+            padx=10, pady=5
+        )
+        label.pack()
+        
+        # Удаление подсказки через 1.2 сек
+        hint.after(1200, hint.destroy)
 
     def on_closing(self):
         """Вызывается при закрытии главного окна с подтверждением."""
