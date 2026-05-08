@@ -76,35 +76,43 @@ customtkinter.set_default_color_theme("blue")
 
 class App(customtkinter.CTk):
     
-    # СТАТИЧЕСКИЕ КОНСТАНТЫ СТАТУСОВ (Жесткая привязка)
-    STATUS_PLANNED_ID = 1      
-    STATUS_ON_TREATMENT_ID = 3 
-    STATUS_COMPLETED_ID = 4    
-    
-    # КОНСТАНТЫ ВРЕМЕННЫХ ИНТЕРВАЛОВ
-    HISTORY_DAYS = 10           # Количество дней истории для отображения
-    FUTURE_DAYS = 10            # Количество будущих дней для отображения
-    TOTAL_DISPLAY_ROWS = 21     # Общее количество строк в таблице (можно настроить)
-    
-    # КОНСТАНТЫ ЦВЕТОВ ДЛЯ ПОДСВЕТКИ
-    COLOR_DATE_DEFAULT = "#555"            # Обычная дата
-    COLOR_DATE_TODAY = "#FFFF00"           # Текущая дата (жёлтый)
-    COLOR_DATE_FUTURE = "#4A90E2"          # Будущая дата (голубой)
-    COLOR_DATE_DUPLICATE = "#FF0000"       # Дата с дублями (красный)
-    COLOR_DUPLICATE_PATIENT = "#FF6B6B"    # Пациент с дублями (светло-красный)
-    COLOR_TODAY_BORDER = "#990000"         # Белый/Чёрный/Красный или любой яркий цвет для рамки
-    COLOR_NEW_PATIENT = "#A5D6A7"          # Новый пациент, первая серия (светлый зелёный)
-    COLOR_NEW_PATIENT_REPEAT = "#4CAF50"   # Новый пациент, повторная серия (яркий зелёный)
-    COLOR_LAST_FRACTION = "#FFCC80"        # Последняя фракция, первая серия (светлый оранжевый)
-    COLOR_LAST_FRACTION_REPEAT = "#FF9800" # Последняя фракция, повторная серия (яркий оранжевый)
-    COLOR_WEEKEND_ZERO = "#777777"         # Выходной или нулевая строка (тёмно-серый)
-    COLOR_WEEKEND_ZERO_TEXT = "#3A3A3A"    # Текст в серой строке
-    
-    # Скорректированная константа: Общая высота фреймов настроек и отступов
-    FIXED_CONTROLS_HEIGHT = 115 
-    
-    # Порог уведомления о завершении смены (осталось <= пациентов)
-    LOW_PATIENTS_THRESHOLD = 1  
+    def _load_config_constants(self):
+        """Загружает константы из config.ini"""
+        # СТАТУСЫ БД (tcalendar_status)
+        self.STATUS_PLANNED_ID = self.config.getint('db_status', 'calendar_planned', fallback=1)
+        self.STATUS_ON_TREATMENT_ID = self.config.getint('db_status', 'calendar_on_treatment', fallback=3)
+        self.STATUS_COMPLETED_ID = self.config.getint('db_status', 'calendar_completed', fallback=4)
+        
+        # СТАТУСЫ СЕРИЙ (tseries_status - с картинки)
+        self.SERIES_ON_TREATMENT = self.config.getint('db_status', 'series_on_treatment', fallback=1)
+        self.SERIES_NOT_STARTED = self.config.getint('db_status', 'series_not_started', fallback=2)
+        self.SERIES_ON_BREAK = self.config.getint('db_status', 'series_on_break', fallback=3)
+        self.SERIES_SUSPENDED = self.config.getint('db_status', 'series_suspended', fallback=4)
+        self.SERIES_STOPPED = self.config.getint('db_status', 'series_stopped', fallback=5)
+        self.SERIES_COMPLETED = self.config.getint('db_status', 'series_completed', fallback=6)
+
+        # ЛОГИКА
+        self.HISTORY_DAYS = self.config.getint('logic', 'history_days', fallback=10)
+        self.FUTURE_DAYS = self.config.getint('logic', 'future_days', fallback=10)
+        self.TOTAL_DISPLAY_ROWS = self.config.getint('logic', 'total_display_rows', fallback=21)
+        self.LOW_PATIENTS_THRESHOLD = self.config.getint('logic', 'low_patients_threshold', fallback=1)
+        self.AVG_TIME_PER_PATIENT = self.config.getint('logic', 'avg_time_per_patient', fallback=7)
+        
+        # ЦВЕТА
+        self.COLOR_DATE_DEFAULT = self.config.get('colors', 'date_default', fallback="#555")
+        self.COLOR_DATE_TODAY = self.config.get('colors', 'date_today', fallback="#FFFF00")
+        self.COLOR_DATE_FUTURE = self.config.get('colors', 'date_future', fallback="#4A90E2")
+        self.COLOR_DATE_DUPLICATE = self.config.get('colors', 'date_duplicate', fallback="#FF0000")
+        self.COLOR_DUPLICATE_PATIENT = self.config.get('colors', 'duplicate_patient', fallback="#FF6B6B")
+        self.COLOR_TODAY_BORDER = self.config.get('colors', 'today_border', fallback="#990000")
+        self.COLOR_NEW_PATIENT = self.config.get('colors', 'new_patient', fallback="#A5D6A7")
+        self.COLOR_NEW_PATIENT_REPEAT = self.config.get('colors', 'new_patient_repeat', fallback="#4CAF50")
+        self.COLOR_LAST_FRACTION = self.config.get('colors', 'last_fraction', fallback="#FFCC80")
+        self.COLOR_LAST_FRACTION_REPEAT = self.config.get('colors', 'last_fraction_repeat', fallback="#FF9800")
+        self.COLOR_WEEKEND_ZERO = self.config.get('colors', 'weekend_zero', fallback="#777777")
+        self.COLOR_WEEKEND_ZERO_TEXT = self.config.get('colors', 'weekend_zero_text', fallback="#3A3A3A")
+        
+        self.FIXED_CONTROLS_HEIGHT = 115 
     
     def debug_print_columns(self):
         """Ищет колонки, содержащие время, в связанных таблицах."""
@@ -116,7 +124,7 @@ class App(customtkinter.CTk):
             SELECT column_name, data_type 
             FROM information_schema.columns 
             WHERE table_name = '{table}'
-            AND (data_type LIKE '%timestamp%' OR column_name LIKE '%time%');
+            AND (data_type LIKE '%%timestamp%%' OR column_name LIKE '%%time%%');
             """
             try:
                 data = execute_query(query, ())
@@ -145,6 +153,7 @@ class App(customtkinter.CTk):
         self.low_patients_notified = False
         
         self._bot_first_run = True
+        self.tg_bot = None
         
         self.last_system_tick = datetime.now()
         self.idle_start_time = datetime.now()
@@ -160,8 +169,12 @@ class App(customtkinter.CTk):
         # Менеджеры (прокси и будильник) создаются позже, после создания виджетов
 
         # 1. Загрузка конфигурации
-        self.config = configparser.ConfigParser()
-        self.config.read('config.ini', encoding='utf-8-sig')
+        self.config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.ini')
+        self.config.read(config_path, encoding='utf-8-sig')
+
+        # Загружаем константы из конфига
+        self._load_config_constants()
 
         # Настройки окна
         try:
@@ -184,13 +197,6 @@ class App(customtkinter.CTk):
             'On_Treatment': self.config.get('status_colors', 'On_Treatment', fallback='green')
         }
         
-        # Загрузка кастомных цветов подсветки
-        if 'highlight_colors' in self.config:
-            self.COLOR_DATE_TODAY = self.config.get('highlight_colors', 'current_date', fallback="#FFFF00")
-            self.COLOR_DATE_FUTURE = self.config.get('highlight_colors', 'future_date', fallback="#4A90E2")
-            self.COLOR_DATE_DUPLICATE = self.config.get('highlight_colors', 'duplicate_date', fallback="#FF0000")
-            self.COLOR_DUPLICATE_PATIENT = self.config.get('highlight_colors', 'duplicate_patient', fallback="#FF6B6B")
-
         # Параметры размеров таблиц
         self.col_width = self.config.getint('table_main', 'col_width', fallback=135)
         self.row_height = self.config.getint('table_main', 'row_height', fallback=40)
@@ -282,28 +288,26 @@ class App(customtkinter.CTk):
         }
         self.report_manager = ReportManager(self.after, status_ids)
 
-        # Запуск циклов обновления через небольшую задержку, когда окно уже готово
-        self.after(100, self.update_data)                
-        self.update_on_treatment_label_loop() # Сразу запускаем первый круг обновления
-        self.after(200, self.alarm_manager.tick)
-        self.after(500, self.report_manager.schedule_reports)
-
-        # TELEGRAM БОТ 
-        # (Удален вызов _start_proxy, так как он теперь в ProxyManager)
-        
-        # Создаём экземпляр
+        # TELEGRAM БОТ (Инициализируем ДО запуска циклов обновления)
         self.tg_bot = TelegramBot(
             config=self.config,
             list_callback=self._get_today_list_for_bot,
             status_callback=self._on_bot_status_changed,
             on_treatment_callback=self._get_on_treatment_for_bot
         )
-        
+
+        # Запуск циклов обновления через небольшую задержку, когда окно уже готово
+        self.after(100, self.update_data)                
+        self.update_on_treatment_label_loop() # Сразу запускаем первый круг обновления
+        self.after(200, self.alarm_manager.tick)
+        self.after(500, self.report_manager.schedule_reports)
+
         # 1. Запускаем "движок" бота (создает поток)
-        self.after(1000, self.tg_bot.start)  
-        
-        # 2. Через 2 секунды (когда прокси и поток точно готовы) переключаем в ВКЛ
-        self.after(2000, self._auto_enable_bot)
+        if self.tg_bot:
+            self.after(1000, self.tg_bot.start)  
+            
+            # 2. Через 2 секунды (когда прокси и поток точно готовы) переключаем в ВКЛ
+            self.after(2000, self._auto_enable_bot)
 
         # self._schedule_auto_reports() # Устарело, теперь управляется ReportManager
         
@@ -1308,18 +1312,29 @@ class App(customtkinter.CTk):
                 exp_sec = raw_exp / 10.0
                 
                 if remaining_count > 0:
-                    # Формула: экспозиция + кол-во * 7 мин (среднее время на укладку каждого пациента)
-                    pauses_sec = remaining_count * 7 * 60
+                    # Формула: экспозиция + кол-во * среднее время (из конфига)
+                    pauses_sec = remaining_count * self.AVG_TIME_PER_PATIENT * 60
                     total_rem_sec = exp_sec + pauses_sec
                     
                     finish_dt = datetime.now() + timedelta(seconds=total_rem_sec)
                     finish_str = finish_dt.strftime("%H:%M")
                     self.after(0, lambda s=finish_str: self.shift_end_label.configure(text=f"🏁 Конец в: {s}"))
+                    
+                    # Отправляем в Telegram
+                    if hasattr(self, 'tg_bot') and self.tg_bot and self.tg_bot._enabled:
+                        if hasattr(self.tg_bot, 'set_shift_end'):
+                            self.tg_bot.set_shift_end(finish_str)
                 else:
                     self.after(0, lambda: self.shift_end_label.configure(text="🏁 Конец в: --:--"))
+                    if hasattr(self, 'tg_bot') and self.tg_bot and self.tg_bot._enabled:
+                        if hasattr(self.tg_bot, 'set_shift_end'):
+                            self.tg_bot.set_shift_end("--:--")
             except Exception as e:
                 logger.debug(f"[TPulse] Ошибка расчета времени окончания: {e}")
                 self.after(0, lambda: self.shift_end_label.configure(text="🏁 Конец в: --:--"))
+                if hasattr(self, 'tg_bot') and self.tg_bot and self.tg_bot._enabled:
+                    if hasattr(self.tg_bot, 'set_shift_end'):
+                        self.tg_bot.set_shift_end("--:--")
 
             # 2. ЛОГИКА ОПРЕДЕЛЕНИЯ АКТУАЛЬНОГО ПАЦИЕНТА
             try:
@@ -2076,12 +2091,12 @@ class App(customtkinter.CTk):
             'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'j', 'к': 'k', 'л': 'l', 'м': 'm',
             'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
             'ф': 'f', 'х': 'x', 'ц': 'c', 'ч': 'ch', 'ш': 'sh', 'щ': 'shh',
-            'ъ': '"', 'ы': 'y', 'ь': "'", 'э': 'eh', 'ю': 'yu', 'я': 'ya',
+            'ъ': '"', 'ы': 'y', 'ь': '`', 'э': 'eh', 'ю': 'yu', 'я': 'ya',
             'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Jo',
             'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'J', 'К': 'K', 'Л': 'L', 'М': 'M',
             'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
             'Ф': 'F', 'Х': 'X', 'Ц': 'C', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shh',
-            'Ъ': '"', 'Ы': 'Y', 'Ь': "'", 'Э': 'Eh', 'Ю': 'Yu', 'Я': 'Ya'
+            'Ъ': '"', 'Ы': 'Y', 'Ь': '`', 'Э': 'Eh', 'Ю': 'Yu', 'Я': 'Ya'
         }
         return "".join(mapping.get(c, c) for c in text)
 

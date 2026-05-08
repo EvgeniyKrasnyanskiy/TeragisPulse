@@ -1,14 +1,14 @@
 [postgresql]
-# Эти данные подтягиваются из .env или прописываются здесь
-host = 127.0.0.1
-database = teragis_db
-user = postgres
-password = password
-port = 5432
+# Эти данные теперь предпочтительно хранить в .env
+host = ${DB_HOST}
+database = ${DB_NAME}
+user = ${DB_USER}
+password = ${DB_PASS}
+port = ${DB_PORT}
 
 [window]
-width = 1200
-height = 850
+width = 1780
+height = 660
 title = TeragisPulse
 
 [table_main]
@@ -29,8 +29,70 @@ max_chars_comment = 45
 Completed = #ff8e8a
 On_Treatment = #66ff66
 
+[colors]
+# Основные группы (для сводных таблиц)
+Planned_1 = #E0FFFF
+Completed_1 = #AFEEEE
+Total_1 = #7FFFD4
+Planned_2 = #ccff99
+Completed_2 = #b3ff66
+Total_2 = #99ff33
+Planned_Other = #FFFACD
+Completed_Other = #EEE8AA
+Total_Other = #FFD700
+Planned_All = #E6E6FA
+Completed_All = #D8BFD8
+Total_All = #DDA0DD
+Default = #ffffff
+
+# Даты и служебные (для основного расписания)
+date_default = #555555
+date_today = #FFFF00
+date_future = #4A90E2
+date_duplicate = #FF0000
+duplicate_patient = #FF6B6B
+today_border = #990000
+new_patient = #A5D6A7
+new_patient_repeat = #4CAF50
+last_fraction = #FFCC80
+last_fraction_repeat = #FF9800
+weekend_zero = #777777
+weekend_zero_text = #3A3A3A
+
+[logic]
+# История и будущее в днях для загрузки данных
+history_days = 10
+future_days = 10
+# Максимальное количество строк в основной таблице
+total_display_rows = 21
+# Порог уведомления о завершении (сколько пациентов осталось до звукового сигнала)
+low_patients_threshold = 1
+# Среднее время на одного пациента в минутах (для расчета конца смены)
+avg_time_per_patient = 7
+
+[bot_intervals]
+# Интервал обновления сообщения в Telegram (в секундах)
+day_update_sec = 600
+night_update_sec = 1800
+
+[db_status]
+# ID статусов из таблицы tcalendar_status БД Varian
+calendar_planned = 1
+calendar_on_treatment = 3
+calendar_completed = 4
+
+# ID статусов из таблицы tseries_status БД Varian (с картинки/плана)
+series_on_treatment = 1
+series_not_started = 2
+series_on_break = 3
+series_suspended = 4
+series_stopped = 5
+series_completed = 6
+
 [telegram]
 use_ws = True
-# Интервалы обновлений
+# Если не используется WebSocket, параметры ниже
+interval_minutes = 0
 interval_seconds = 5
+max_hours = 0
 no_change_minutes = 30

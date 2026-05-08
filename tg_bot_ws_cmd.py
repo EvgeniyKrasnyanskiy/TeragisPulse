@@ -21,6 +21,10 @@ class BotCommands:
         self.execute_query = execute_query
         self.channel_1ro = kwargs.get('channel_1ro')
         self.channel_2ro = kwargs.get('channel_2ro')
+        self.add_admin_callback = kwargs.get('add_admin_callback')
+        self.config = kwargs.get('config')
+        # ID статуса 'Завершено' из БД
+        self.STATUS_COMPLETED = self.config.getint('db_status', 'calendar_completed', fallback=4) if self.config else 4
         
         self._cmd_list_msg_id = None
         self._cmd_list_date = None
@@ -34,6 +38,7 @@ class BotCommands:
             (self.report_list_handler, r'/excel(?:\s+.*)?'),
             (self.report_handler, r'/summary(?:\s+.*)?'),
             (self.edit_handler, r'/edit(?:\s+.*)?'),
+            (self.auth_handler, r'/auth(?:\s+(\d+))?'),
             (self.msg_to_group_handler, r'/msg_to_group(?:\s+.*)?')
         ]
         
@@ -77,8 +82,10 @@ class BotCommands:
             return await event.respond("ℹ️ Пример: <code>/summary 1</code> или <code>/summary 2 01.05-15.05</code>", parse_mode='html')
 
         target_dept = args[1]
-        if target_dept not in ['1', '2']:
-            return await event.respond("❌ Укажите отделение 1 или 2.")
+        if target_dept not in ['1', '2', '0']:
+            return await event.respond("❌ Укажите отделение 1, 2 или 0 (Прочее).")
+
+        target_dept_str = f"{target_dept}РО" if target_dept != '0' else "Прочее"
 
         date_param = args[2] if len(args) > 2 else None
         
@@ -94,75 +101,48 @@ class BotCommands:
             return await event.respond("❌ Ошибка формата даты.")
 
         query = '''
-            SELECT ts.name, ts.note, tu.patient_id
+            SELECT tu.patient_id, ts.name, ts.note
             FROM tcalendar tc
             INNER JOIN tseries ts ON tc.series_id = ts.series_id
             INNER JOIN tpatient tu ON ts.patient_id = tu.patient_id
-            WHERE tc.calendar_status_id = 4
+            WHERE tc.calendar_status_id = %s
               AND tc.visitdate BETWEEN %s AND %s
         '''
 
         try:
-            # Предварительно загружаем справочники врачей для подстраховки
-            from constants import first_ro_dict, second_ro_dict
-            from identification import identification_func # Импорт функции[cite: 5]
-            
             try:
-                res = await asyncio.to_thread(self.execute_query, query, (start_date, end_date))
+                # Получаем всех пациентов за период для классификации в Python
+                res = await asyncio.to_thread(self.execute_query, query, (self.STATUS_COMPLETED, start_date, end_date))
             except DatabaseError:
                 return await event.respond("⚠️ Ошибка подключения к базе данных.")
 
-            count_1ro = set()    # Все пациенты 1 отделения
-            count_2ro = set()    # Все пациенты 2 отделения
-            count_unknown = set() # Все остальные
-
+            # Считаем уникальных пациентов с учетом умной классификации
+            unique_patients = set()
             for row in res:
-                s_name, s_note, p_id = row
-                series_name = str(s_name).strip()
-                detected_dept = None
-
-                # 1. Сначала проверяем серию
-                if series_name.startswith('1'):
-                    detected_dept = '1'
-                elif series_name.startswith('2'):
-                    detected_dept = '2'
+                p_id, s_name, s_note = row
                 
-                # 2. Если серия не помогла, используем вашу функцию[cite: 5]
-                if detected_dept is None:
-                    try:
-                        _, _, _, office = identification_func(s_note) #[cite: 5]
-                        if office in ['1', '2']:
-                            detected_dept = office
-                    except:
-                        # Ручной поиск если функция упала[cite: 5]
-                        if s_note:
-                            first_word = s_note.strip().split()[0].split('/')[0].capitalize()
-                            if first_word in first_ro_dict: detected_dept = '1'
-                            elif first_word in second_ro_dict: detected_dept = '2'
-
-                # РАСПРЕДЕЛЯЕМ ПО ГРУППАМ[cite: 5]
-                if detected_dept == '1':
-                    count_1ro.add(p_id)
-                elif detected_dept == '2':
-                    count_2ro.add(p_id)
+                # Логика: Сначала маска серии, потом врач
+                if str(s_name).startswith('1'):
+                    effective_dept = '1'
+                elif str(s_name).startswith('2'):
+                    effective_dept = '2'
                 else:
-                    count_unknown.add(p_id)
+                    _, _, _, office = identification_func(s_note)
+                    effective_dept = office # '1', '2' или '0'
 
-            # Теперь из неуточненных убираем тех, кто уже найден в 1 или 2 отделении[cite: 5]
-            # (чтобы не было дублей, если у пациента разные серии)
-            final_unknown = count_unknown - count_1ro - count_2ro
-            
-            # Выбираем результат для ответа
-            current_count = len(count_1ro) if target_dept == '1' else len(count_2ro)
+                if effective_dept == target_dept:
+                    unique_patients.add(p_id)
+
+            current_count = len(unique_patients)
 
             df = "%d.%m.%Y"
             period_str = start_date.strftime(df) if start_date == end_date else f"с {start_date.strftime(df)} по {end_date.strftime(df)}"
                 
             final_text = (
-                f"Пациентов {target_dept}РО отлечено за период {period_str}: {current_count}.\n"
-                f"Неуточнённых за этот же период: {len(final_unknown)}."
+                f"Пациентов <b>{target_dept_str}</b> отлечено за период {period_str}: <b>{current_count}</b>.\n\n"
+                f"<i>Примечание: Подсчет ведется по уникальным ID пациентов. Метод включает проверку ФИО врача, если номер серии не указан. Данные могут отличаться от табло GUI.</i>"
             )
-            await event.respond(final_text)
+            await event.respond(final_text, parse_mode='html')
 
         except Exception as e:
             logger.error(f"[Bot_CMD] Ошибка: {e}")
@@ -177,6 +157,7 @@ class BotCommands:
                 "/summary <1> <02.04-20.04> — за период\n"
                 "/excel <1> <05.05.2026> — отчет в файл\n"
                 "/edit <ссылка> <текст> — редактировать\n"
+                "/auth <id> — добавить админа\n"
                 "/msg_to_group <1/2> <текст> — сообщение в группу\n"
                 "/ping — статус связи\n"
                 "/help — справка")
@@ -186,7 +167,22 @@ class BotCommands:
         asyncio.create_task(self._silent_delete(event))
         start_time = event.message.date.timestamp()
         latency = max(0, round((datetime.now().timestamp() - start_time) * 1000))
-        await event.respond(f"🏓 Pong! ({latency} ms)")
+        await event.respond(f"🏓 Pong! ({latency} ms)\nUser ID: <code>{event.sender_id}</code>", parse_mode='html')
+
+    async def auth_handler(self, event):
+        """Добавление нового ID администратора"""
+        asyncio.create_task(self._silent_delete(event))
+        if not self.add_admin_callback:
+            return await event.respond("❌ Ошибка: callback авторизации не настроен.")
+            
+        new_id = event.pattern_match.group(1)
+        if not new_id:
+            return await event.respond("ℹ️ Пример: <code>/auth 12345678</code>", parse_mode='html')
+            
+        if self.add_admin_callback(new_id):
+            await event.respond(f"✅ Пользователь <code>{new_id}</code> теперь в списке доверенных.", parse_mode='html')
+        else:
+            await event.respond(f"ℹ️ Пользователь <code>{new_id}</code> уже был в списке.")
 
     async def edit_handler(self, event):
         asyncio.create_task(self._silent_delete(event))
@@ -249,6 +245,10 @@ class BotCommands:
             return await event.respond("ℹ️ Пример: <code>/excel 1 05.05.2026</code>", parse_mode='html')
 
         dept_num = args[1]
+        if dept_num not in ['1', '2', '0']:
+            return await event.respond("❌ Укажите отделение 1, 2 или 0 (Прочее).")
+        
+        dept_label = f"{dept_num}РО" if dept_num != '0' else "Прочее"
         period_raw = args[2]
 
         try:
@@ -271,7 +271,7 @@ class BotCommands:
                     MIN(ts.series_id) as first_series_id
                 FROM public.tcalendar tc
                 JOIN public.tseries ts ON tc.series_id = ts.series_id
-                WHERE tc.calendar_status_id = 4
+                WHERE tc.calendar_status_id = %s
                 GROUP BY ts.patient_id
             ),
             first_series_data AS (
@@ -293,6 +293,7 @@ class BotCommands:
                     ELSE tp.sex 
                 END as gender,
                 ts.name as series_name,
+                ts.note,
                 -- Новые поля статистики
                 fsd.first_plan_dose,
                 pcs.total_received_dose,
@@ -306,19 +307,15 @@ class BotCommands:
             JOIN public.tpatient tp ON ts.patient_id = tp.patient_id
             JOIN patient_course_stats pcs ON tp.patient_id = pcs.patient_id
             JOIN first_series_data fsd ON pcs.first_series_id = fsd.series_id
-            WHERE tc.calendar_status_id = 4 
+            WHERE tc.calendar_status_id = %s 
               AND tc.visitdate BETWEEN %s AND %s
-              AND (
-                  (%s = '1' AND ts.name LIKE %s) OR 
-                  (%s = '2' AND ts.name LIKE %s)
-              )
             ORDER BY tc.visitdate ASC, fio ASC;
         """
 
         try:
             try:
-                # Передаем 6 параметров: start, end, dept, '1%', dept, '2%'
-                res = await asyncio.to_thread(self.execute_query, query, (start_date, end_date, dept_num, '1%', dept_num, '2%'))
+                # Передаем параметры: статус для CTE и статус/даты для основного запроса
+                res = await asyncio.to_thread(self.execute_query, query, (self.STATUS_COMPLETED, self.STATUS_COMPLETED, start_date, end_date))
             except DatabaseError:
                 return await event.respond("📭 Ошибка подключения к базе данных или превышен таймаут.")
 
@@ -334,9 +331,19 @@ class BotCommands:
                 # row[0] - day_group, row[1] - patient_id, row[2] - fio...
                 day_str = row[0]
                 p_id = row[1]
-                fio, bd, sex, s_name, p_dose, r_dose, r_fr, p_fr, c_start, c_end = row[2:]
+                fio, bd, sex, s_name, s_note, p_dose, r_dose, r_fr, p_fr, c_start, c_end = row[2:]
                 
-                # ГЛОБАЛЬНАЯ ПРОВЕРКА ДУБЛИКАТОВ
+                # КЛАССИФИКАЦИЯ (Умное определение отделения)
+                if str(s_name).startswith('1'):
+                    effective_dept = '1'
+                elif str(s_name).startswith('2'):
+                    effective_dept = '2'
+                else:
+                    _, _, _, office = identification_func(s_note)
+                    effective_dept = office
+
+                if effective_dept != dept_num:
+                    continue
                 if p_id in seen_patients:
                     continue
                 seen_patients.add(p_id)
@@ -358,16 +365,23 @@ class BotCommands:
                 final_rows.append([fio.upper(), bd, sex, s_name, dose_format, fr_format, c_start, c_end])
 
             final_rows.append([""] * 8)
-            final_rows.append([f"ВСЕГО ПАЦИЕНТОВ - {unique_patients_count}", "", "", "", "", "", "", ""])
+            final_rows.append([f"ВСЕГО ПАЦИЕНТОВ ({dept_label}) - {unique_patients_count}", "", "", "", "", "", "", ""])
+            final_rows.append([""] * 8)
+            final_rows.append(["ПРИМЕЧАНИЕ: Статистика курса (Доза/Фр) берется из ПЕРВОЙ серии пациента.", "", "", "", "", "", "", ""])
+            final_rows.append(["Отчет может отличаться от GUI за счет умной привязки по врачу.", "", "", "", "", "", "", ""])
             final_rows.append([""] * 8)
             final_rows.append(["ОТЧЕТ СФОРМИРОВАН АВТОМАТИЧЕСКИ", "", "", "", "", "", "", ""])
-            final_rows.append([f"Выборка: Отделение {dept_num}, Период {period_raw}", "", "", "", "", "", "", ""])
+            final_rows.append([f"Выборка: {dept_label}, Период {period_raw}", "", "", "", "", "", "", ""])
 
             from reports import generate_custom_patient_excel_report
             file_path = generate_custom_patient_excel_report(final_rows, dept_num, period_raw)
 
             if file_path and os.path.exists(file_path):
-                await self.client.send_file(event.chat_id, str(file_path), caption=f"📊 Отчет по пациентам (Отд. {dept_num})")
+                caption = (f"📊 Отчет по пациентам ({dept_label})\n"
+                           f"🏁 Период: {period_raw}\n"
+                           f"👥 Уникальных: {unique_patients_count}\n"
+                           f"⚠️ Считается по ID + фамилии врача.")
+                await self.client.send_file(event.chat_id, str(file_path), caption=caption)
                 os.remove(str(file_path))
             else:
                 await event.respond("❌ Ошибка при сохранении файла.")

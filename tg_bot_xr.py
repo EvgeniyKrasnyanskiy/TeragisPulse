@@ -58,6 +58,7 @@ class TelegramBot:
         self._last_list_text = None
         self._started_at = None
         self._current_on_treatment = "свободно"
+        self._current_shift_end = "—"
         
         self._last_msg_date = None  # Хранит дату последнего отправленного сообщения
 
@@ -70,6 +71,10 @@ class TelegramBot:
     def set_on_treatment(self, patient_name):
         """Метод-приемник данных из GUI."""
         self._current_on_treatment = patient_name if patient_name else "свободно"
+
+    def set_shift_end(self, time_str):
+        """Устанавливает время окончания смены."""
+        self._current_shift_end = time_str if time_str else "—"
 
     def trigger_force_update(self):
         """Для совместимости: в HTTP версии цикл и так крутится, доп. логика не нужна."""
@@ -136,6 +141,7 @@ class TelegramBot:
         # Блок 3: Инфо
         started_str = self._started_at.strftime('%H:%M (%d.%m)') if self._started_at else "—"
         block3 = (f"☢️ На аппарате: {on_treatment}\n"
+                  f"🏁 Конец смены: {self._current_shift_end}\n"
                   f"🕐 Бот запущен в {started_str}\n"
                   f"🔄 Обновлено в {get_time_with_date()}")
         

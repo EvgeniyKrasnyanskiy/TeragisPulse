@@ -48,7 +48,8 @@ class TelegramBot:
         # 1. Настройки из конфига и .env (приоритет .env)
         self._config = config
         self._token = os.getenv('TG_BOT_TOKEN', config.get('telegram', 'bot_token', fallback=''))
-        self._admin_id = int(os.getenv('TG_ADMIN_IDS', config.get('telegram', 'admin_ids', fallback='0')))
+        self._admin_ids_raw = os.getenv('TG_ADMIN_IDS', config.get('telegram', 'admin_ids', fallback='0'))
+        self._admin_ids = self._parse_admin_ids(self._admin_ids_raw)
         self._api_id = int(os.getenv('TG_API_ID', config.get('telegram', 'api_id', fallback='0')))
         self._api_hash = os.getenv('TG_API_HASH', config.get('telegram', 'api_hash', fallback=''))
         
@@ -60,6 +61,10 @@ class TelegramBot:
         # 3. Каналы для рассылок
         self.channel_1ro = os.getenv('TG_CHANNEL_ID_1RO', config.get('telegram', 'channel_id_1ro', fallback='-1001876615218'))
         self.channel_2ro = os.getenv('TG_CHANNEL_ID_2RO', config.get('telegram', 'channel_id_2ro', fallback='-1001529879326'))
+        
+        # 4. Интервалы обновления (из config.ini)
+        self._day_interval = config.getint('bot_intervals', 'day_update_sec', fallback=600)
+        self._night_interval = config.getint('bot_intervals', 'night_update_sec', fallback=1800)
 
         # 4. Обратные вызовы (Callbacks) для связи с GUI и БД
         self.list_callback = list_callback
@@ -71,6 +76,7 @@ class TelegramBot:
         self._last_text = ""
         self._last_event = ""
         self._current_on_treatment = "свободно"
+        self._current_shift_end = "—"
         self._date_lock = threading.Lock()
         # Восстанавливаем дату из файла при старте, чтобы не потерять смену дня
         self._last_msg_date = self._load_persisted_date()
@@ -89,11 +95,13 @@ class TelegramBot:
         # 7. Подготавливаем объект команд (БЕЗ await здесь)
         self.commands = BotCommands(
             client=None, 
-            admin_ids=[str(self._admin_id)], 
+            admin_ids=self._admin_ids, 
             list_callback=self.list_callback,
             build_message_func=self._build_message,
             channel_1ro=self.channel_1ro,
-            channel_2ro=self.channel_2ro
+            channel_2ro=self.channel_2ro,
+            add_admin_callback=self.add_admin_id, # Для команды /add_admin
+            config=self._config
         )
 
     # --- РАЗДЕЛ 1: УПРАВЛЕНИЕ ЗАПУСКОМ/ОСТАНОВКОЙ ---
@@ -293,9 +301,9 @@ class TelegramBot:
 
             now = datetime.now()
             if 0 <= now.hour < 8:
-                wait_time = 1800 # Ночь
+                wait_time = self._night_interval # Ночь
             else:
-                wait_time = 600  # День
+                wait_time = self._day_interval   # День
                 
             await asyncio.sleep(wait_time)
             
@@ -361,7 +369,7 @@ class TelegramBot:
                 return
 
             # 5. Отправка или редактирование
-            chat_id = int(self._admin_id)
+            chat_id = int(self._admin_ids[0]) if self._admin_ids else 0
             if self._last_msg_id is None:
                 # Отправляем новое, если ID нет (новый день или первый запуск без файла)
                 msg = await self.client.send_message(chat_id, new_text, parse_mode='html')
@@ -419,6 +427,7 @@ class TelegramBot:
         
         # Формируем подвал (на аппарате будет жирным)
         block3 = (f"☢️ На аппарате: <b>{safe_name}</b>\n"
+                  f"🏁 Конец смены в: <b>{self._current_shift_end}</b>\n"
                   f"🕐 Бот запущен в {started_str}\n"
                   f"🔄 Обновлено в {updated_str}")
 
@@ -456,6 +465,65 @@ class TelegramBot:
                     asyncio.run_coroutine_threadsafe(self._update_cycle(), self._loop)
                 except RuntimeError:
                     pass # Цикл событий уже остановлен, обновление не требуется
+
+    def set_shift_end(self, time_str):
+        """Устанавливает время окончания смены для вывода в Telegram."""
+        # logger.debug(f"[Bot_WS] Установка времени окончания: {time_str}")
+        if self._current_shift_end != time_str:
+            self._current_shift_end = time_str
+            # Обновляем сообщение, если бот активен
+            if self._enabled and self._loop and self._connection_state == "connected":
+                try:
+                    asyncio.run_coroutine_threadsafe(self._update_cycle(), self._loop)
+                except RuntimeError:
+                    pass
+
+    def _parse_admin_ids(self, raw_str) -> list:
+        """Парсит строку с ID админов, добавляя тех, что сохранены в файле."""
+        ids = [s.strip() for s in str(raw_str).split(',') if s.strip()]
+        
+        # Загружаем из доп. файла (динамически добавленные)
+        persisted = self._load_trusted_users()
+        for pid in persisted:
+            if pid not in ids:
+                ids.append(pid)
+        return ids
+
+    def add_admin_id(self, new_id):
+        """Добавляет новый ID в список доверенных и сохраняет в файл."""
+        new_id = str(new_id).strip()
+        if new_id not in self._admin_ids:
+            self._admin_ids.append(new_id)
+            self._save_trusted_users(self._admin_ids)
+            # Обновляем список в объекте команд
+            if hasattr(self, 'commands'):
+                self.commands.admin_ids = self._admin_ids
+            return True
+        return False
+
+    def _load_trusted_users(self) -> list:
+        try:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".trusted_users")
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    return [line.strip() for line in f if line.strip()]
+        except Exception as e:
+            logger.error(f"[Bot_WS] Ошибка чтения доверенных пользователей: {e}")
+        return []
+
+    def _save_trusted_users(self, ids_list):
+        try:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".trusted_users")
+            # Сохраняем только те, которых нет в базовом конфиге/env, 
+            # но для простоты сохраним всё, что было добавлено сверх базового
+            with open(path, "w", encoding="utf-8") as f:
+                # Фильтруем те, что изначальные (чтобы не дублировать)
+                base_ids = [s.strip() for s in str(self._admin_ids_raw).split(',') if s.strip()]
+                for uid in ids_list:
+                    if uid not in base_ids:
+                        f.write(f"{uid}\n")
+        except Exception as e:
+            logger.error(f"[Bot_WS] Ошибка сохранения доверенных пользователей: {e}")
 
     def _set_state(self, state: str):
         """
