@@ -11,3 +11,4 @@ python-dotenv==1.2.2
 python-socks==2.8.1
 rsa==4.9.1
 Telethon==1.43.2
+pynput==1.8.1

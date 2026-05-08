@@ -19,6 +19,7 @@ from utils import get_formatted_date, get_time_with_date, format_name_short
 from reports import generate_daily_report
 from dotenv import load_dotenv
 import pyperclip
+from translit_manager import TranslitManager
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -270,6 +271,10 @@ class App(customtkinter.CTk):
         
         self.alarm_manager = AlarmManager(self.clock_label, self.after)
         
+        # Инициализация фоновой транслитерации
+        self.translit_manager = TranslitManager()
+        self.after(3000, self.translit_manager.start) # Запуск через 3 сек после старта
+        
         # Передаем ID статусов в менеджер отчетов
         status_ids = {
             'COMPLETED': self.STATUS_COMPLETED_ID,
@@ -312,6 +317,20 @@ class App(customtkinter.CTk):
         """Принудительно включает рассылку при старте программы."""
         if hasattr(self, 'tg_bot') and not self.tg_bot._enabled:
             self.tg_bot.toggle() # Это само вызовет смену цвета кнопки и индикатора
+
+    def _toggle_translit(self):
+        """Переключает состояние фоновой транслитерации."""
+        if not hasattr(self, 'translit_manager'):
+            return
+            
+        if self.translit_manager.enabled:
+            self.translit_manager.stop()
+            self.translit_toggle_btn.configure(text="▶", fg_color="#444", hover_color="#666")
+            self.translit_status_label.configure(text="⚪ Tr ", text_color="#AAAAAA")
+        else:
+            self.translit_manager.start()
+            self.translit_toggle_btn.configure(text="⏸", fg_color="#1f538d", hover_color="#14375e")
+            self.translit_status_label.configure(text="🔡 Tr ", text_color="#4CAF50")
 
     # НОВЫЙ БЛОК ДЛЯ НОВЫХ СЕРИЙ
     
@@ -452,6 +471,25 @@ class App(customtkinter.CTk):
             command=self._toggle_bot
         )
         self.bot_toggle_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        # ИНДИКАТОР И КНОПКА ТРАНСЛИТЕРАЦИИ (Shift+ЛКМ)
+        self.translit_status_label = customtkinter.CTkLabel(
+            settings_frame,
+            text="🔡 Tr ",
+            font=("Arial", 12),
+            text_color="#4CAF50",
+        )
+        self.translit_status_label.pack(side=tk.LEFT, padx=(10, 2))
+
+        self.translit_toggle_btn = customtkinter.CTkButton(
+            settings_frame,
+            text="⏸",
+            width=36,
+            fg_color="#1f538d", # Темно-синий для активного состояния
+            hover_color="#14375e",
+            command=self._toggle_translit
+        )
+        self.translit_toggle_btn.pack(side=tk.LEFT, padx=(0, 10))
 
         # ИНДИКАТОР СТАТУСА БАЗЫ ДАННЫХ
         self.db_status_label = customtkinter.CTkLabel(
@@ -2032,18 +2070,18 @@ class App(customtkinter.CTk):
         self._bind_mousewheel_scroll(frame, frame)
 
     def transliterate(self, text):
-        """Простая транслитерация кириллицы в латиницу (Задача 14)."""
+        """Прямая транслитерация кириллицы в латиницу по ГОСТ 7.79-2000 (Система Б)."""
         mapping = {
-            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
-            'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'jo',
+            'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'j', 'к': 'k', 'л': 'l', 'м': 'm',
             'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
-            'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
-            'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
-            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'E',
-            'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+            'ф': 'f', 'х': 'x', 'ц': 'c', 'ч': 'ch', 'ш': 'sh', 'щ': 'shh',
+            'ъ': '"', 'ы': 'y', 'ь': "'", 'э': 'eh', 'ю': 'yu', 'я': 'ya',
+            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Jo',
+            'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'J', 'К': 'K', 'Л': 'L', 'М': 'M',
             'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
-            'Ф': 'F', 'Х': 'H', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Sch',
-            'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+            'Ф': 'F', 'Х': 'X', 'Ц': 'C', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shh',
+            'Ъ': '"', 'Ы': 'Y', 'Ь': "'", 'Э': 'Eh', 'Ю': 'Yu', 'Я': 'Ya'
         }
         return "".join(mapping.get(c, c) for c in text)
 
