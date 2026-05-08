@@ -1268,7 +1268,7 @@ class App(customtkinter.CTk):
                         JOIN tfield tf ON ts.series_id = tf.series_id
                         JOIN tplan tp ON tf.field_id = tp.field_id
                         WHERE tc.visitdate = CURRENT_DATE
-                          AND tc.calendar_status_id = {self.STATUS_PLANNED_ID}
+                          AND tc.calendar_status_id IN ({self.STATUS_PLANNED_ID}, {self.STATUS_ON_TREATMENT_ID})
                           AND tp.par_id = 'SH'
                         ORDER BY tf.field_id, tp.par_id, tp.insert_tms DESC
                     ) as tp_last
@@ -1311,7 +1311,8 @@ class App(customtkinter.CTk):
                 raw_exp = float(exp_res[0][0]) if exp_res and exp_res[0][0] is not None else 0
                 exp_sec = raw_exp / 10.0
                 
-                if remaining_count > 0:
+                # Раньше было if remaining_count > 0, теперь считаем, если есть хоть какая-то экспозиция
+                if exp_sec > 0 or remaining_count > 0:
                     # Формула: экспозиция + кол-во * среднее время (из конфига)
                     pauses_sec = remaining_count * self.AVG_TIME_PER_PATIENT * 60
                     total_rem_sec = exp_sec + pauses_sec
