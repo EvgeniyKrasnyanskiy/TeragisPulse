@@ -1253,6 +1253,74 @@ class App(customtkinter.CTk):
                         self.tg_bot.trigger_force_update()
 
 
+            # --- ПЕРЕНЕСЕНО ВЫШЕ (бывший блок 2) ---
+            # 1.1 ЛОГИКА ОПРЕДЕЛЕНИЯ АКТУАЛЬНОГО ПАЦИЕНТА (Теперь ПЕРЕД расчетом времени)
+            try:
+                data_active = execute_query(query_active, (self.STATUS_ON_TREATMENT_ID,))
+                self._set_db_status(True)
+            except DatabaseError:
+                self._set_db_status(False)
+                data_active = []
+            
+            current_ids = [row[4] for row in data_active] if (data_active and data_active != 'Error') else []
+            
+            if current_ids:
+                new_ids = [cid for cid in current_ids if cid not in self.known_ids_today]
+                if new_ids:
+                    self.active_calendar_id = new_ids[-1]
+                    for cid in current_ids:
+                        self.known_ids_today.add(cid)
+                    print(f"[NEW SESSION] Обнаружен новый вход: ID {self.active_calendar_id}")
+                
+                if self.active_calendar_id in current_ids:
+                    active_row = next(r for r in data_active if r[4] == self.active_calendar_id)
+                else:
+                    self.active_calendar_id = max(current_ids)
+                    active_row = next(r for r in data_active if r[4] == self.active_calendar_id)
+
+                # РАСПАКОВКА
+                surname, forename, series_name, p_id, c_id, note = active_row
+                
+                new_patient_str = f"{surname} {forename} ({series_name})"
+                current_patient_id = p_id
+
+                # ФИО Доктора и форматирование имени
+                full_name_string = f"{surname} {forename}"
+                p_short = format_name_short(full_name_string)
+                doc_raw = (note or "").strip().split()
+                limit = 4 if str(series_name).startswith('2') else 3
+                doc_display = f" ({doc_raw[0].capitalize()[:limit]})" if doc_raw else ""
+                bot_status_str = f"{p_short}{doc_display}"
+                self.last_bot_status = bot_status_str
+            else:
+                self.active_calendar_id = None
+                new_patient_str = ""
+                bot_status_str = "свободно"
+                self.last_bot_status = "свободно"
+                current_patient_id = None
+
+            # ОБРАБОТКА СМЕНЫ ПАЦИЕНТА / ТРИГГЕР БОТА
+            if not hasattr(self, 'last_patient_id'): self.last_patient_id = None
+            
+            if current_patient_id != self.last_patient_id:
+                if self.last_patient_id is not None:
+                    self.check_and_log_incomplete_dose(self.last_patient_id, getattr(self, 'last_patient_name', ''))
+                    self.idle_start_time = now
+
+                if current_patient_id is not None:
+                    if self.sounds_enabled: winsound.Beep(1000, 400) 
+                    logger.info(f"[TPulse] На аппарате: {new_patient_str}")
+                    self.idle_start_time = None
+
+                self.last_patient_id = current_patient_id
+                self.last_patient_name = new_patient_str
+                
+                # ОТПРАВКА СТАТУСА БОТУ
+                if hasattr(self, 'tg_bot') and self.tg_bot and self.tg_bot._enabled:
+                    bot_state = getattr(self.tg_bot, '_connection_state', None)
+                    if bot_state == "connected":
+                        self.tg_bot.set_on_treatment(bot_status_str)
+
             # 1. ПРОВЕРКА ОСТАТКА ПАЦИЕНТОВ (Planned) И РАСЧЕТ ОКОНЧАНИЯ
             try:
                 # Количество оставшихся
@@ -1337,71 +1405,6 @@ class App(customtkinter.CTk):
                     if hasattr(self.tg_bot, 'set_shift_end'):
                         self.tg_bot.set_shift_end("--:--")
 
-            # 2. ЛОГИКА ОПРЕДЕЛЕНИЯ АКТУАЛЬНОГО ПАЦИЕНТА
-            try:
-                data = execute_query(query_active, (self.STATUS_ON_TREATMENT_ID,))
-                self._set_db_status(True)
-            except DatabaseError:
-                self._set_db_status(False)
-                data = []
-            current_ids = [row[4] for row in data] if (data and data != 'Error') else []
-            
-            if current_ids:
-                new_ids = [cid for cid in current_ids if cid not in self.known_ids_today]
-                if new_ids:
-                    self.active_calendar_id = new_ids[-1]
-                    for cid in current_ids:
-                        self.known_ids_today.add(cid)
-                    print(f"[NEW SESSION] Обнаружен новый вход: ID {self.active_calendar_id}")
-                
-                if self.active_calendar_id in current_ids:
-                    active_row = next(r for r in data if r[4] == self.active_calendar_id)
-                else:
-                    self.active_calendar_id = max(current_ids)
-                    active_row = next(r for r in data if r[4] == self.active_calendar_id)
-
-                # РАСПАКОВКА
-                surname, forename, series_name, p_id, c_id, note = active_row
-                
-                new_patient_str = f"{surname} {forename} ({series_name})"
-                current_patient_id = p_id
-
-                # ФИО Доктора и форматирование имени
-                full_name_string = f"{surname} {forename}"
-                p_short = format_name_short(full_name_string)
-                doc_raw = (note or "").strip().split()
-                limit = 4 if str(series_name).startswith('2') else 3
-                doc_display = f" ({doc_raw[0].capitalize()[:limit]})" if doc_raw else ""
-                bot_status_str = f"{p_short}{doc_display}"
-                self.last_bot_status = bot_status_str
-            else:
-                self.active_calendar_id = None
-                new_patient_str = ""
-                bot_status_str = "свободно"
-                self.last_bot_status = "свободно"
-                current_patient_id = None
-
-            # 3. ОБРАБОТКА СМЕНЫ ПАЦИЕНТА / ТРИГГЕР БОТА
-            if not hasattr(self, 'last_patient_id'): self.last_patient_id = None
-            
-            if current_patient_id != self.last_patient_id:
-                if self.last_patient_id is not None:
-                    self.check_and_log_incomplete_dose(self.last_patient_id, getattr(self, 'last_patient_name', ''))
-                    self.idle_start_time = now
-
-                if current_patient_id is not None:
-                    if self.sounds_enabled: winsound.Beep(1000, 400) 
-                    logger.info(f"[TPulse] На аппарате: {new_patient_str}")
-                    self.idle_start_time = None
-
-                self.last_patient_id = current_patient_id
-                self.last_patient_name = new_patient_str
-                
-                # ОТПРАВКА СТАТУСА БОТУ
-                if hasattr(self, 'tg_bot') and self.tg_bot._enabled:
-                    bot_state = getattr(self.tg_bot, '_connection_state', None)
-                    if bot_state == "connected":
-                        self.tg_bot.set_on_treatment(bot_status_str)
 
             # 4. ОБНОВЛЕНИЕ ТЕКСТА В ИНТЕРФЕЙСЕ
             self.on_treatment_label.configure(
