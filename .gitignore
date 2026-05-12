@@ -5,6 +5,7 @@ venv/
 __pycache__/
 *.pyc
 bot_session.session
+scratch/
 xmtproto/
 xray/
 doctors.txt
@@ -13,3 +14,4 @@ schema_VERI.sql
 errors.txt
 constants.py
 config.ini
+schema_VERI.sql

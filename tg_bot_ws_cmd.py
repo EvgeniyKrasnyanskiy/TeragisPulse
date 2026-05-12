@@ -151,11 +151,9 @@ class BotCommands:
     async def help_handler(self, event):
         asyncio.create_task(self._silent_delete(event))
         text = ("<b>Доступные команды:</b>\n\n"
-                "/list — список на сегодня\n"
-                "/list <07.04> — список на дату\n"
-                "/summary <1> <01.04> — кол-во за день\n"
-                "/summary <1> <02.04-20.04> — за период\n"
-                "/excel <1> <05.05.2026> — отчет в файл\n"
+                "/list <дата> — список на дату\n"
+                "/summary <1/2/0> <дата> — кол-во за день/период\n"
+                "/excel <1/2/0> <дата> — отчет в файл\n"
                 "/edit <ссылка> <текст> — редактировать\n"
                 "/auth <id> — добавить админа\n"
                 "/msg_to_group <1/2> <текст> — сообщение в группу\n"
