@@ -1389,21 +1389,27 @@ class App(customtkinter.CTk):
                     finish_str = finish_dt.strftime("%H:%M")
                     self.after(0, lambda s=finish_str: self.shift_end_label.configure(text=f"🏁 Конец в: {s}"))
                     
-                    # Отправляем в Telegram
+                    # Отправляем в Telegram только если HH:MM изменилось
                     if hasattr(self, 'tg_bot') and self.tg_bot and self.tg_bot._enabled:
                         if hasattr(self.tg_bot, 'set_shift_end'):
-                            self.tg_bot.set_shift_end(finish_str)
+                            if finish_str != getattr(self, '_last_tg_shift_end', ''):
+                                self.tg_bot.set_shift_end(finish_str)
+                                self._last_tg_shift_end = finish_str
                 else:
                     self.after(0, lambda: self.shift_end_label.configure(text="🏁 Конец в: --:--"))
                     if hasattr(self, 'tg_bot') and self.tg_bot and self.tg_bot._enabled:
                         if hasattr(self.tg_bot, 'set_shift_end'):
-                            self.tg_bot.set_shift_end("--:--")
+                            if "--:--" != getattr(self, '_last_tg_shift_end', ''):
+                                self.tg_bot.set_shift_end("--:--")
+                                self._last_tg_shift_end = "--:--"
             except Exception as e:
                 logger.debug(f"[TPulse] Ошибка расчета времени окончания: {e}")
                 self.after(0, lambda: self.shift_end_label.configure(text="🏁 Конец в: --:--"))
                 if hasattr(self, 'tg_bot') and self.tg_bot and self.tg_bot._enabled:
                     if hasattr(self.tg_bot, 'set_shift_end'):
-                        self.tg_bot.set_shift_end("--:--")
+                        if "--:--" != getattr(self, '_last_tg_shift_end', ''):
+                            self.tg_bot.set_shift_end("--:--")
+                            self._last_tg_shift_end = "--:--"
 
 
             # 4. ОБНОВЛЕНИЕ ТЕКСТА В ИНТЕРФЕЙСЕ

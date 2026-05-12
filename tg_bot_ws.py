@@ -471,12 +471,9 @@ class TelegramBot:
         # logger.debug(f"[Bot_WS] Установка времени окончания: {time_str}")
         if self._current_shift_end != time_str:
             self._current_shift_end = time_str
-            # Обновляем сообщение, если бот активен
-            if self._enabled and self._loop and self._connection_state == "connected":
-                try:
-                    asyncio.run_coroutine_threadsafe(self._update_cycle(), self._loop)
-                except RuntimeError:
-                    pass
+            # Обновление сообщения теперь происходит только при смене пациента, 
+            # изменении списка или по таймеру (мягкая интеграция).
+
 
     def _parse_admin_ids(self, raw_str) -> list:
         """Парсит строку с ID админов, добавляя тех, что сохранены в файле."""
