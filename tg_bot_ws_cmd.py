@@ -151,13 +151,13 @@ class BotCommands:
     async def help_handler(self, event):
         asyncio.create_task(self._silent_delete(event))
         text = ("<b>Доступные команды:</b>\n\n"
-                "/list <дата> — список на дату\n"
-                "/summary <1/2/0> <дата> — кол-во за день/период\n"
-                "/excel <1/2/0> <дата> — отчет в файл\n"
-                "/edit <ссылка> <текст> — редактировать\n"
-                "/auth <id> — добавить админа\n"
-                "/msg_to_group <1/2> <текст> — сообщение в группу\n"
-                "/ping — статус связи\n"
+                "/list [дата] — список пациентов\n"
+                "/summary [1/2/0][дата/пер.] — кол-во\n"
+                "/excel [1/2/0][дата/пер.] — отчет\n"
+                "/edit [ссылка][текст] — редактир.\n"
+                "/auth [id] — добавить юзера\n"
+                "/msg_to_group [1/2][текст] — смс\n"
+                "/ping — пингануть бота\n"
                 "/help — справка")
         await event.respond(text, parse_mode='html')
 
