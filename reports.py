@@ -78,7 +78,8 @@ def generate_daily_report(data_rows: List[Dict[str, Any]], report_date: Optional
     Если данных нет — удаляет файл отчета за этот день.
     """
     r_date = report_date or date.today()
-    target_dir = REPORTS_DIR / subfolder
+    # Создаем структуру: Reports / Отделение / Год / Месяц
+    target_dir = REPORTS_DIR / subfolder / f"{r_date.year}" / f"{r_date.month:02d}"
     file_path = target_dir / f"report_{r_date.isoformat()}.csv"
 
     # Если данных нет — удаляем старый файл, если он был
@@ -123,22 +124,27 @@ def generate_daily_report(data_rows: List[Dict[str, Any]], report_date: Optional
 def generate_custom_patient_excel_report(data_rows: List[List[Any]], dept_num: Union[int, str], period_str: str) -> Optional[Path]:
     """Генерирует детальный CSV-отчет (детальная история)."""
     filename = f"Detailed_Report_RO{dept_num}_{period_str}.csv"
-    path = REPORTS_DIR / filename
+    
+    # Определяем папку назначения (Отделение / Год / Месяц)
+    dept_label = f"{dept_num}RO"
+    now = date.today()
+    target_dir = REPORTS_DIR / dept_label / f"{now.year}" / f"{now.month:02d}"
+    path = target_dir / filename
     
     header = [
         "ФИО пациента", 
-        "Дата рожд.", 
+        "ДР", 
         "Пол", 
         "Серия", 
         "Доза", 
         "Фракции", 
-        "Начало курса", 
-        "Конец курса"
+        "Начало", 
+        "Конец"
     ]
     
     try:
-        if not REPORTS_DIR.exists():
-            REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        if not target_dir.exists():
+            target_dir.mkdir(parents=True, exist_ok=True)
             
         with open(path, mode="w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f, delimiter=";")
