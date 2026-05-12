@@ -90,13 +90,16 @@ class TranslitManager:
             time.sleep(0.1)
             
             # 2. Очищаем буфер, выделяем всё (Ctrl+A) и копируем (Ctrl+C)
+            # Используем виртуальные коды (VK), чтобы не зависеть от раскладки RU/EN
+            VK_A, VK_C, VK_V = 65, 67, 86
+            
             pyperclip.copy("") 
             with self.kb_controller.pressed(keyboard.Key.ctrl):
-                self.kb_controller.press('a')
-                self.kb_controller.release('a')
+                self.kb_controller.press(keyboard.KeyCode.from_vk(VK_A))
+                self.kb_controller.release(keyboard.KeyCode.from_vk(VK_A))
                 time.sleep(0.05)
-                self.kb_controller.press('c')
-                self.kb_controller.release('c')
+                self.kb_controller.press(keyboard.KeyCode.from_vk(VK_C))
+                self.kb_controller.release(keyboard.KeyCode.from_vk(VK_C))
             
             # 3. Ждем наполнения буфера
             time.sleep(0.15)
@@ -113,10 +116,11 @@ class TranslitManager:
             converted_text = self._apply_reverse_translit(original_text)
             
             # 6. Вставляем обратно (Ctrl+V)
+            VK_V = 86
             pyperclip.copy(converted_text.upper())
             with self.kb_controller.pressed(keyboard.Key.ctrl):
-                self.kb_controller.press('v')
-                self.kb_controller.release('v')
+                self.kb_controller.press(keyboard.KeyCode.from_vk(VK_V))
+                self.kb_controller.release(keyboard.KeyCode.from_vk(VK_V))
                 
             logger.debug(f"[Translit] Преобразовано: {original_text[:20]}... -> {converted_text[:20]}...")
             

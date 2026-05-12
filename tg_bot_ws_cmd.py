@@ -50,6 +50,67 @@ class BotCommands:
         
         asyncio.create_task(self._cleanup_task())
 
+    async def _get_patients_dept_map(self, patient_ids: list) -> dict:
+        """
+        Собирает все серии для списка пациентов и определяет отделение для каждого.
+        Логика: если во всех сериях (где есть данные) одно отделение - используем его.
+        Если данные противоречивы - отделение '0'.
+        """
+        if not patient_ids:
+            return {}
+        
+        # Уникальные ID для запроса
+        u_pids = list(set(patient_ids))
+        placeholders = ','.join(['%s'] * len(u_pids))
+        query = f"SELECT patient_id, name, note FROM tseries WHERE patient_id IN ({placeholders})"
+        
+        try:
+            res = await asyncio.to_thread(self.execute_query, query, tuple(u_pids))
+        except DatabaseError:
+            return {}
+
+        patient_series = {}
+        for p_id, s_name, s_note in res:
+            if p_id not in patient_series:
+                patient_series[p_id] = []
+            patient_series[p_id].append((s_name, s_note))
+            
+        dept_map = {}
+        for p_id, series_list in patient_series.items():
+            doc_depts = set()
+            name_depts = set()
+            
+            for s_name, s_note in series_list:
+                # Собираем все упоминания отделений по врачам
+                _, _, _, office = identification_func(s_note)
+                if office in ['1', '2']:
+                    doc_depts.add(office)
+                
+                # Собираем все упоминания отделений по названиям серий
+                if str(s_name).startswith('1'):
+                    name_depts.add('1')
+                elif str(s_name).startswith('2'):
+                    name_depts.add('2')
+            
+            # ПРИНЯТИЕ РЕШЕНИЯ (Иерархия)
+            if len(doc_depts) == 1:
+                # 1. Приоритет: Есть однозначный врач во всех сериях
+                dept_map[p_id] = list(doc_depts)[0]
+            elif len(doc_depts) > 1:
+                # 2. Конфликт врачей: Пытаемся разрешить через номера серий
+                if len(name_depts) == 1:
+                    dept_map[p_id] = list(name_depts)[0]
+                else:
+                    dept_map[p_id] = '0' # Неразрешимый конфликт
+            else:
+                # 3. Врачей нет: Идентифицируем только по номерам серий
+                if len(name_depts) == 1:
+                    dept_map[p_id] = list(name_depts)[0]
+                else:
+                    dept_map[p_id] = '0'
+                
+        return dept_map
+
     def _is_admin(self, event):
         return str(event.sender_id) in self.admin_ids
 
@@ -116,19 +177,15 @@ class BotCommands:
             except DatabaseError:
                 return await event.respond("⚠️ Ошибка подключения к базе данных.")
 
-            # Считаем уникальных пациентов с учетом умной классификации
+            # 1. Собираем все ID пациентов для массового определения отделений
+            all_patient_ids = [row[0] for row in res]
+            dept_map = await self._get_patients_dept_map(all_patient_ids)
+
+            # 2. Считаем уникальных пациентов с учетом истории всех их серий
             unique_patients = set()
             for row in res:
-                p_id, s_name, s_note = row
-                
-                # Логика: Сначала маска серии, потом врач
-                if str(s_name).startswith('1'):
-                    effective_dept = '1'
-                elif str(s_name).startswith('2'):
-                    effective_dept = '2'
-                else:
-                    _, _, _, office = identification_func(s_note)
-                    effective_dept = office # '1', '2' или '0'
+                p_id = row[0]
+                effective_dept = dept_map.get(p_id, '0')
 
                 if effective_dept == target_dept:
                     unique_patients.add(p_id)
@@ -139,8 +196,7 @@ class BotCommands:
             period_str = start_date.strftime(df) if start_date == end_date else f"с {start_date.strftime(df)} по {end_date.strftime(df)}"
                 
             final_text = (
-                f"Пациентов <b>{target_dept_str}</b> отлечено за период {period_str}: <b>{current_count}</b>.\n\n"
-                f"<i>Примечание: Подсчет ведется по уникальным ID пациентов. Метод включает проверку ФИО врача, если номер серии не указан. Данные могут отличаться от табло GUI.</i>"
+                f"Пациентов <b>{target_dept_str}</b> отлечено за период {period_str}: <b>{current_count}</b>."
             )
             await event.respond(final_text, parse_mode='html')
 
@@ -321,52 +377,65 @@ class BotCommands:
                 return await event.respond("📭 Данных не найдено за указанный период.")
 
             final_rows = []
-            current_day = ""
+            unknown_rows = []
             seen_patients = set() # Используем patient_id для 100% точности
             unique_patients_count = 0
+            unknown_count = 0
             
+            # 1. Массовая классификация пациентов по всем сериям
+            all_pids = [r[1] for r in res]
+            dept_map = await self._get_patients_dept_map(all_pids)
+
+            current_day = ""
             for row in res:
                 # row[0] - day_group, row[1] - patient_id, row[2] - fio...
                 day_str = row[0]
                 p_id = row[1]
                 fio, bd, sex, s_name, s_note, p_dose, r_dose, r_fr, p_fr, c_start, c_end = row[2:]
                 
-                # КЛАССИФИКАЦИЯ (Умное определение отделения)
-                if str(s_name).startswith('1'):
-                    effective_dept = '1'
-                elif str(s_name).startswith('2'):
-                    effective_dept = '2'
-                else:
-                    _, _, _, office = identification_func(s_note)
-                    effective_dept = office
+                effective_dept = dept_map.get(p_id, '0')
 
-                if effective_dept != dept_num:
-                    continue
                 if p_id in seen_patients:
                     continue
                 seen_patients.add(p_id)
-                unique_patients_count += 1
-                
-                # Добавляем заголовок дня только если нашли в нем уникального пациента
-                if day_str != current_day:
-                    if current_day != "": 
-                        final_rows.append([""] * 8)
-                    final_rows.append([f"--- ДЕНЬ: {day_str} ---", "", "", "", "", "", "", ""])
-                    current_day = day_str
                 
                 # Форматируем Дозу: Предписано(1-я сер) / Получено(всего)
                 dose_format = f"{p_dose} / {round(float(r_dose), 2)}"
-                
                 # Форматируем Фракции: Отпущено(всего) / Предписано(1-я сер)
                 fr_format = f"'{r_fr} / {p_fr}" 
-                
-                final_rows.append([fio.upper(), bd, sex, s_name, dose_format, fr_format, c_start, c_end])
+                patient_data = [fio.upper(), bd, sex, s_name, dose_format, fr_format, c_start, c_end]
 
+                if effective_dept == dept_num:
+                    unique_patients_count += 1
+                    # Добавляем заголовок дня только если нашли в нем уникального пациента
+                    if day_str != current_day:
+                        if current_day != "": 
+                            final_rows.append([""] * 8)
+                        final_rows.append([f"--- ДЕНЬ: {day_str} ---", "", "", "", "", "", "", ""])
+                        current_day = day_str
+                    final_rows.append(patient_data)
+                elif effective_dept == '0' and dept_num != '0':
+                    # Собираем "потеряшек" для вывода в конце
+                    unknown_count += 1
+                    unknown_rows.append(patient_data)
+
+            # Итоговый блок для целевого отделения
             final_rows.append([""] * 8)
-            final_rows.append([f"ВСЕГО ПАЦИЕНТОВ ({dept_label}) - {unique_patients_count}", "", "", "", "", "", "", ""])
-            final_rows.append([""] * 8)
-            final_rows.append(["ПРИМЕЧАНИЕ: Статистика курса (Доза/Фр) берется из ПЕРВОЙ серии пациента.", "", "", "", "", "", "", ""])
-            final_rows.append(["Отчет может отличаться от GUI за счет умной привязки по врачу.", "", "", "", "", "", "", ""])
+            final_rows.append([f"ИТОГО ПАЦИЕНТОВ ({dept_label}): {unique_patients_count}", "", "", "", "", "", "", ""])
+            final_rows.append(["", "", "", "", "", "", "", ""])
+            final_rows.append(["ПРАВИЛА ИДЕНТИФИКАЦИИ (Иерархия):", "", "", "", "", "", "", ""])
+            final_rows.append(["1. Уникальный врач во всех сериях пациента (приоритет).", "", "", "", "", "", "", ""])
+            final_rows.append(["2. При отсутствии или конфликте врачей - уникальный номер серии (1/2).", "", "", "", "", "", "", ""])
+            final_rows.append(["3. В остальных случаях пациент попадает в группу 0.", "", "", "", "", "", "", ""])
+            
+            # Если есть неидентифицированные и мы в отчете РО - добавляем их
+            if unknown_rows and dept_num != '0':
+                final_rows.append([""] * 8)
+                final_rows.append(["--- НЕИДЕНТИФИЦИРОВАННЫЕ ПАЦИЕНТЫ (ГРУППА 0) ---", "", "", "", "", "", "", ""])
+                final_rows.append(["(Бот не нашел фамилию врача или номер отделения в сериях)", "", "", "", "", "", "", ""])
+                final_rows.extend(unknown_rows)
+                final_rows.append([f"ВСЕГО НЕИДЕНТИФИЦИРОВАННЫХ: {unknown_count}", "", "", "", "", "", "", ""])
+
             final_rows.append([""] * 8)
             final_rows.append(["ОТЧЕТ СФОРМИРОВАН АВТОМАТИЧЕСКИ", "", "", "", "", "", "", ""])
             final_rows.append([f"Выборка: {dept_label}, Период {period_raw}", "", "", "", "", "", "", ""])
@@ -377,8 +446,10 @@ class BotCommands:
             if file_path and os.path.exists(file_path):
                 caption = (f"📊 Отчет по пациентам ({dept_label})\n"
                            f"🏁 Период: {period_raw}\n"
-                           f"👥 Уникальных: {unique_patients_count}\n"
-                           f"⚠️ Считается по ID + фамилии врача.")
+                           f"👥 Уникальных: {unique_patients_count}")
+                if unknown_count > 0 and dept_num != '0':
+                    caption += f"\n⚠️ Не определено: {unknown_count} (в конце файла)"
+                
                 await self.client.send_file(event.chat_id, str(file_path), caption=caption)
                 os.remove(str(file_path))
             else:
