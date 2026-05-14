@@ -144,6 +144,15 @@ class TelegramBot:
         block2 = self._last_event
         
         # Блок 3: Инфо
+        if self.on_treatment_callback:
+            try:
+                fresh_status = self.on_treatment_callback()
+                if fresh_status:
+                    self.set_on_treatment(fresh_status)
+            except Exception as e:
+                logger.error(f"[Bot_HTTP]: Ошибка актуализации статуса: {e}")
+
+        on_treatment = self._current_on_treatment
         started_str = self._started_at.strftime('%H:%M (%d.%m)') if self._started_at else "—"
         block3 = (f"☢️ На аппарате: {on_treatment}\n"
                   f"✅ Отлечено: {self._current_completed_count}\n"

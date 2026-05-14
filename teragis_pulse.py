@@ -1349,9 +1349,7 @@ class App(customtkinter.CTk):
                 
                 # ОТПРАВКА СТАТУСА БОТУ
                 if hasattr(self, 'tg_bot') and self.tg_bot and self.tg_bot._enabled:
-                    bot_state = getattr(self.tg_bot, '_connection_state', None)
-                    if bot_state == "connected":
-                        self.tg_bot.set_on_treatment(bot_status_str)
+                    self.tg_bot.set_on_treatment(bot_status_str)
 
             # 1. ПРОВЕРКА ОСТАТКА ПАЦИЕНТОВ (Planned) И РАСЧЕТ ОКОНЧАНИЯ
             try:
@@ -1422,14 +1420,9 @@ class App(customtkinter.CTk):
                 
                 if completed_count != self.last_completed_count:
                     if hasattr(self, 'tg_bot') and self.tg_bot._enabled:
-                        bot_state = getattr(self.tg_bot, '_connection_state', None)
-                        # В XR версии нет _connection_state, поэтому проверяем наличие
-                        if bot_state == "connected" or not hasattr(self.tg_bot, '_connection_state'):
-                            if hasattr(self.tg_bot, 'set_completed_count'):
-                                self.tg_bot.set_completed_count(completed_count)
-                                # Для WS версии set_completed_count сам триггерит обновление, 
-                                # для XR версии это произойдет в следующем цикле опроса.
-                            self.last_completed_count = completed_count
+                        if hasattr(self.tg_bot, 'set_completed_count'):
+                            self.tg_bot.set_completed_count(completed_count)
+                        self.last_completed_count = completed_count
 
             # 1.2 РАСЧЕТ ВРЕМЕНИ ЗАВЕРШЕНИЯ СМЕНЫ (Задача 13)
             try:

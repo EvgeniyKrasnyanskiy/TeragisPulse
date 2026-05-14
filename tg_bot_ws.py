@@ -412,10 +412,20 @@ class TelegramBot:
         if new_event and new_event.strip(): 
             self._last_event = new_event
 
-        # 1. Текущий статус уже сокращен через set_on_treatment
+        # 1. Сначала пытаемся актуализировать статус через callback
+        if self.on_treatment_callback:
+            try:
+                fresh_status = self.on_treatment_callback()
+                if fresh_status:
+                    # Обновляем внутреннее состояние (форматирование внутри set_on_treatment)
+                    self.set_on_treatment(fresh_status)
+            except Exception as e:
+                logger.error(f"[Bot_WS]: Ошибка актуализации статуса: {e}")
+
+        # 2. Теперь берем текущий (уже актуализированный или старый, если callback подвел)
         on_treatment = self._current_on_treatment
         
-        # 2. Экранируем спецсимволы, чтобы бот не "падал"
+        # 3. Экранируем спецсимволы, чтобы бот не "падал"
         safe_name = html.escape(str(on_treatment))
 
         # 3. Формируем временные метки
