@@ -12,11 +12,12 @@ logger = logging.getLogger(__name__)
 class AlarmManager:
     """Управление будильником и часами в GUI."""
 
-    def __init__(self, clock_label: customtkinter.CTkLabel, after_callback: Callable):
+    def __init__(self, clock_label: customtkinter.CTkLabel, after_callback: Callable, default_time: str = "20:30"):
         self.clock_label = clock_label
         self.after = after_callback
         self.alarm_time: Optional[dt_time] = None
         self.alarm_triggered = False
+        self.default_time = default_time
 
     def tick(self) -> None:
         """Обновление часов и проверка будильника."""
@@ -96,7 +97,7 @@ class AlarmManager:
         if self.alarm_time is not None:
             entry.insert(0, self.alarm_time.strftime('%H:%M'))
         else:
-            entry.insert(0, "20:30")
+            entry.insert(0, self.default_time)
         entry.pack(pady=4)
         entry.focus()
 

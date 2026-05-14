@@ -97,6 +97,7 @@ class App(customtkinter.CTk):
         self.TOTAL_DISPLAY_ROWS = self.cfg.getint('logic', 'total_display_rows', fallback=21)
         self.LOW_PATIENTS_THRESHOLD = self.cfg.getint('logic', 'low_patients_threshold', fallback=1)
         self.AVG_TIME_PER_PATIENT = self.cfg.getint('logic', 'avg_time_per_patient', fallback=7)
+        self.ALARM_DEFAULT_TIME = self.cfg.get('logic', 'alarm_default_time', fallback='20:30')
         
         # ЦВЕТА
         self.COLOR_DATE_DEFAULT = self.cfg.get('colors', 'date_default', fallback="#555")
@@ -274,8 +275,12 @@ class App(customtkinter.CTk):
         # Инициализация менеджеров
         self.proxy_manager = ProxyManager(USE_WS)
         self.proxy_manager.start()
-        
-        self.alarm_manager = AlarmManager(self.clock_label, self.after)
+        # 5. Менеджеры
+        self.alarm_manager = AlarmManager(
+            self.clock_label, 
+            self.after, 
+            default_time=self.ALARM_DEFAULT_TIME
+        )
         
         # Инициализация фоновой транслитерации
         self.translit_manager = TranslitManager()
