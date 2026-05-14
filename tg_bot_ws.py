@@ -76,6 +76,7 @@ class TelegramBot:
         self._last_text = ""
         self._last_event = ""
         self._current_on_treatment = "свободно"
+        self._current_completed_count = 0
         self._current_shift_end = "—"
         self._date_lock = threading.Lock()
         # Восстанавливаем дату из файла при старте, чтобы не потерять смену дня
@@ -427,6 +428,7 @@ class TelegramBot:
         
         # Формируем подвал (на аппарате будет жирным)
         block3 = (f"☢️ На аппарате: <b>{safe_name}</b>\n"
+                  f"✅ Отлечено: <b>{self._current_completed_count}</b>\n"
                   f"🏁 Конец смены в: <b>{self._current_shift_end}</b>\n"
                   f"🕐 Бот запущен в {started_str}\n"
                   f"🔄 Обновлено в {updated_str}")
@@ -473,6 +475,16 @@ class TelegramBot:
             self._current_shift_end = time_str
             # Обновление сообщения теперь происходит только при смене пациента, 
             # изменении списка или по таймеру (мягкая интеграция).
+
+    def set_completed_count(self, count):
+        """Устанавливает количество отлеченных пациентов."""
+        if self._current_completed_count != count:
+            self._current_completed_count = count
+            if self._enabled and self._loop and self._connection_state == "connected":
+                try:
+                    asyncio.run_coroutine_threadsafe(self._update_cycle(), self._loop)
+                except RuntimeError:
+                    pass
 
 
     def _parse_admin_ids(self, raw_str) -> list:

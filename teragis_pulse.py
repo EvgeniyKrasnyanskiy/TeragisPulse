@@ -1198,6 +1198,13 @@ class App(customtkinter.CTk):
         WHERE tc.visitdate::date = CURRENT_DATE AND tc.calendar_status_id = {self.STATUS_PLANNED_ID};
         """
         
+        query_count_completed = f"""
+        SELECT COUNT(DISTINCT ts.patient_id)
+        FROM tcalendar tc
+        JOIN tseries ts ON tc.series_id = ts.series_id
+        WHERE tc.visitdate::date = CURRENT_DATE AND tc.calendar_status_id = {self.STATUS_COMPLETED_ID};
+        """
+        
         try:
             now = datetime.now()
             today_date = now.date()
@@ -1311,6 +1318,9 @@ class App(customtkinter.CTk):
                     if self.sounds_enabled: winsound.Beep(1000, 400) 
                     logger.info(f"[TPulse] На аппарате: {new_patient_str}")
                     self.idle_start_time = None
+                else:
+                    logger.info("[TPulse] На аппарате: свободно")
+                    self.idle_start_time = now
 
                 self.last_patient_id = current_patient_id
                 self.last_patient_name = new_patient_str
@@ -1326,6 +1336,9 @@ class App(customtkinter.CTk):
                 # Количество оставшихся
                 planned_res = execute_query(query_count_planned, ())
                 
+                # Количество отлеченных (Задача: Отлечено: ХХ)
+                completed_res = execute_query(query_count_completed, ())
+
                 # 1.2 Суммарная экспозиция ОСТАВШИХСЯ (для расчета окончания)
                 query_exp_remaining = f'''
                     SELECT SUM(CAST(tp_last.value_plan AS FLOAT))
@@ -1373,6 +1386,28 @@ class App(customtkinter.CTk):
                             winsound.Beep(1800, 200)
                             time.sleep(0.1)
                     self.low_patients_notified = True
+
+            # 1.1 ОБРАБОТКА РЕЗУЛЬТАТОВ ВЫПОЛНЕННЫХ
+            completed_count = 0
+            if completed_res and isinstance(completed_res, list):
+                completed_count = int(completed_res[0][0])
+                
+                if not hasattr(self, 'last_completed_count'):
+                    self.last_completed_count = completed_count
+                    if hasattr(self, 'tg_bot') and self.tg_bot._enabled:
+                        if hasattr(self.tg_bot, 'set_completed_count'):
+                            self.tg_bot.set_completed_count(completed_count)
+                
+                if completed_count != self.last_completed_count:
+                    if hasattr(self, 'tg_bot') and self.tg_bot._enabled:
+                        bot_state = getattr(self.tg_bot, '_connection_state', None)
+                        # В XR версии нет _connection_state, поэтому проверяем наличие
+                        if bot_state == "connected" or not hasattr(self.tg_bot, '_connection_state'):
+                            if hasattr(self.tg_bot, 'set_completed_count'):
+                                self.tg_bot.set_completed_count(completed_count)
+                                # Для WS версии set_completed_count сам триггерит обновление, 
+                                # для XR версии это произойдет в следующем цикле опроса.
+                            self.last_completed_count = completed_count
 
             # 1.2 РАСЧЕТ ВРЕМЕНИ ЗАВЕРШЕНИЯ СМЕНЫ (Задача 13)
             try:

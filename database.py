@@ -4,6 +4,7 @@ import logging
 import os
 import configparser
 import threading
+from logging.handlers import RotatingFileHandler
 from typing import Any, List, Optional, Union, Tuple
 from dotenv import load_dotenv
 
@@ -23,7 +24,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_file, encoding='utf-8')
+        RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=1, encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)

@@ -58,6 +58,7 @@ class TelegramBot:
         self._last_list_text = None
         self._started_at = None
         self._current_on_treatment = "свободно"
+        self._current_completed_count = 0
         self._current_shift_end = "—"
         
         self._last_msg_date = None  # Хранит дату последнего отправленного сообщения
@@ -75,6 +76,10 @@ class TelegramBot:
     def set_shift_end(self, time_str):
         """Устанавливает время окончания смены."""
         self._current_shift_end = time_str if time_str else "—"
+
+    def set_completed_count(self, count):
+        """Устанавливает количество отлеченных пациентов."""
+        self._current_completed_count = count
 
     def trigger_force_update(self):
         """Для совместимости: в HTTP версии цикл и так крутится, доп. логика не нужна."""
@@ -141,6 +146,7 @@ class TelegramBot:
         # Блок 3: Инфо
         started_str = self._started_at.strftime('%H:%M (%d.%m)') if self._started_at else "—"
         block3 = (f"☢️ На аппарате: {on_treatment}\n"
+                  f"✅ Отлечено: {self._current_completed_count}\n"
                   f"🏁 Конец смены: {self._current_shift_end}\n"
                   f"🕐 Бот запущен в {started_str}\n"
                   f"🔄 Обновлено в {get_time_with_date()}")
@@ -211,6 +217,7 @@ class TelegramBot:
         # 2. Инициализация переменных
         last_text = None
         last_on_treatment = None
+        last_completed_count = None
         first_run = True
 
         # 3. Основной цикл
@@ -231,9 +238,12 @@ class TelegramBot:
                     current_text = raw_data
 
                 current_on_treatment = self._current_on_treatment
+                current_completed_count = self._current_completed_count
                 
                 # 4. Условие отправки: 
-                if first_run or current_text != last_text or current_on_treatment != last_on_treatment:
+                if (first_run or current_text != last_text or 
+                    current_on_treatment != last_on_treatment or 
+                    current_completed_count != last_completed_count):
                     self._last_list_text = current_text
                     # Вызываем push_update. Важно: внутри push_update 
                     # должен вызываться _build_message, который мы правили выше!
@@ -241,6 +251,7 @@ class TelegramBot:
                     
                     last_text = current_text
                     last_on_treatment = current_on_treatment
+                    last_completed_count = current_completed_count
                 
                 first_run = False
 
