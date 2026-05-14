@@ -70,7 +70,7 @@ low_patients_threshold = 1
 # Среднее время на одного пациента в минутах (для расчета конца смены)
 avg_time_per_patient = 7
 # Время по умолчанию для будильника
-alarm_default_time = 20:30
+alarm_default_time = 19:30
 
 [bot_intervals]
 # Интервал обновления сообщения в Telegram (в секундах)

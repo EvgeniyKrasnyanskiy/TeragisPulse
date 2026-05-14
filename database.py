@@ -144,7 +144,10 @@ def execute_query(query: str, params: Optional[Union[Tuple[Any, ...], List[Any]]
     finally:
         if conn and p:
             try:
-                conn.autocommit = False
+                try:
+                    conn.autocommit = False
+                except:
+                    pass
                 p.putconn(conn)
-            except:
-                pass
+            except Exception as ex:
+                logger.error(f"[DBConnect] Ошибка возврата соединения в пул: {ex}")

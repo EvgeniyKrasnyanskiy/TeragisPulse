@@ -166,6 +166,7 @@ class App(customtkinter.CTk):
         self.geometry_set = False
         self.duplicate_dates = {}
         self.last_duplicate_count = -1
+        self._is_updating = False
         
         # Менеджеры (прокси и будильник) создаются позже, после создания виджетов
 
@@ -263,7 +264,7 @@ class App(customtkinter.CTk):
                 time.sleep(1)
                 curr_t = time.time()
                 delta = curr_t - last_t - 1
-                if abs(delta) > 10:
+                if abs(delta) > 60:
                     logger.error(f"[TPulse] Watchdog: Обнаружен скачок времени ({delta:.1f} сек), программа будет закрыта")
                     messagebox.showerror("Критическая ошибка", 
                                        f"Обнаружен скачок времени ({delta:.1f} сек),\nПрограмма будет закрыта")
@@ -1069,7 +1070,11 @@ class App(customtkinter.CTk):
 
     # ЦИКЛ ОБНОВЛЕНИЯ ГЛАВНОЙ ТАБЛИЦЫ (5 сек) 
     def update_data(self, force=False):
-        """Запуск фонового обновления данных главной таблицы."""
+        """Запуск обновления данных в фоновом потоке с защитой от наслоения."""
+        if not force and self._is_updating:
+            return
+            
+        self._is_updating = True
         threading.Thread(target=self._update_data_worker, args=(force,), daemon=True).start()
 
     def _update_data_worker(self, force=False):
@@ -1152,6 +1157,7 @@ class App(customtkinter.CTk):
             self.after(0, lambda: self._set_db_status(True))
         except DatabaseError:
             self.after(0, lambda: self._set_db_status(False))
+            self._is_updating = False
             # Планируем следующую попытку даже при ошибке
             if not force:
                 self.after(5000, self.update_data)
@@ -1166,6 +1172,8 @@ class App(customtkinter.CTk):
 
             # Все операции с GUI (изменение размеров, отрисовка) отправляем в главный поток
             self.after(0, lambda d=data, f=force: self._update_gui_after_fetch(d, f))
+
+        self._is_updating = False
 
     def _update_gui_after_fetch(self, data, force):
         """Обновление GUI после успешного получения данных из БД."""
