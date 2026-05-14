@@ -76,7 +76,15 @@ class AlarmManager:
         """Диалог установки будильника."""
         dialog = customtkinter.CTkToplevel(master)
         dialog.title("Будильник")
-        dialog.geometry("260x140")
+        
+        # Центрирование окна
+        w, h = 260, 140
+        sw = dialog.winfo_screenwidth()
+        sh = dialog.winfo_screenheight()
+        x = (sw // 2) - (w // 2)
+        y = (sh // 2) - (h // 2)
+        dialog.geometry(f"{w}x{h}+{x}+{y}")
+        
         dialog.resizable(False, False)
         dialog.lift()
         dialog.focus_force()

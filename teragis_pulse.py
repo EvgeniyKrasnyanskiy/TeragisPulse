@@ -180,13 +180,13 @@ class App(customtkinter.CTk):
         try:
             self.initial_w = self.cfg.getint('window', 'width', fallback=1780)
             self.initial_h = self.cfg.getint('window', 'height', fallback=660)
-            self.geometry(f"{self.initial_w}x{self.initial_h}")
+            self.center_window(self, self.initial_w, self.initial_h)
             self.title(self.cfg.get('window', 'title', fallback='TeragisPulse'))
             self.resizable(False, False)
         except Exception:
             self.initial_w = 1780
             self.initial_h = 660
-            self.geometry(f"{self.initial_w}x{self.initial_h}")
+            self.center_window(self, self.initial_w, self.initial_h)
             self.title("TeragisPulse")
             self.resizable(False, False)
 
@@ -418,6 +418,15 @@ class App(customtkinter.CTk):
         else:
             colors = defaults
         return colors
+
+    def center_window(self, win, width, height):
+        """Центрирует окно на экране."""
+        win.update_idletasks()
+        screen_width = win.winfo_screenwidth()
+        screen_height = win.winfo_screenheight()
+        x = (screen_width // 2) - (width // 2)
+        y = (screen_height // 2) - (height // 2)
+        win.geometry(f"{width}x{height}+{x}+{y}")
 
     # ПАНЕЛЬ НАСТРОЕК
     def create_settings_frame(self):
@@ -1670,7 +1679,7 @@ class App(customtkinter.CTk):
             
         self.client_window = customtkinter.CTkToplevel(self)
         self.client_window.title(f"Клиенты: {status_key} ({series_key}) - {date_val}")
-        self.client_window.geometry("1100x560") 
+        self.center_window(self.client_window, 1100, 560)
         self.client_window.resizable(False, False)
         self.client_window.lift()
         self.client_window.focus_force()
@@ -2016,7 +2025,7 @@ class App(customtkinter.CTk):
 
         popup = customtkinter.CTkToplevel(master)
         popup.title("Комментарий")
-        popup.geometry("400x300")
+        self.center_window(popup, 400, 300)
         popup.resizable(False, False)
         
         if master != self:
@@ -2101,7 +2110,7 @@ class App(customtkinter.CTk):
 
         cal_win = customtkinter.CTkToplevel(master)
         cal_win.title(f"Календарь пациента: {patient_fio} (ID: {patient_id})")
-        cal_win.geometry("900x400")
+        self.center_window(cal_win, 900, 400)
         cal_win.resizable(False, False)
         
         if master != self:
