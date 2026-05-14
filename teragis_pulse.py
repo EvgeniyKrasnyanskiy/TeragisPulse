@@ -280,7 +280,7 @@ class App(customtkinter.CTk):
         self.alarm_manager = AlarmManager(
             self.clock_label, 
             self.after, 
-            default_time=self.ALARM_DEFAULT_TIME
+            self.ALARM_DEFAULT_TIME
         )
         
         # Инициализация фоновой транслитерации
