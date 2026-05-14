@@ -79,38 +79,38 @@ class App(customtkinter.CTk):
     def _load_config_constants(self):
         """Загружает константы из config.ini"""
         # СТАТУСЫ БД (tcalendar_status)
-        self.STATUS_PLANNED_ID = self.config.getint('db_status', 'calendar_planned', fallback=1)
-        self.STATUS_ON_TREATMENT_ID = self.config.getint('db_status', 'calendar_on_treatment', fallback=3)
-        self.STATUS_COMPLETED_ID = self.config.getint('db_status', 'calendar_completed', fallback=4)
+        self.STATUS_PLANNED_ID = self.cfg.getint('db_status', 'calendar_planned', fallback=1)
+        self.STATUS_ON_TREATMENT_ID = self.cfg.getint('db_status', 'calendar_on_treatment', fallback=3)
+        self.STATUS_COMPLETED_ID = self.cfg.getint('db_status', 'calendar_completed', fallback=4)
         
         # СТАТУСЫ СЕРИЙ (tseries_status - с картинки)
-        self.SERIES_ON_TREATMENT = self.config.getint('db_status', 'series_on_treatment', fallback=1)
-        self.SERIES_NOT_STARTED = self.config.getint('db_status', 'series_not_started', fallback=2)
-        self.SERIES_ON_BREAK = self.config.getint('db_status', 'series_on_break', fallback=3)
-        self.SERIES_SUSPENDED = self.config.getint('db_status', 'series_suspended', fallback=4)
-        self.SERIES_STOPPED = self.config.getint('db_status', 'series_stopped', fallback=5)
-        self.SERIES_COMPLETED = self.config.getint('db_status', 'series_completed', fallback=6)
+        self.SERIES_ON_TREATMENT = self.cfg.getint('db_status', 'series_on_treatment', fallback=1)
+        self.SERIES_NOT_STARTED = self.cfg.getint('db_status', 'series_not_started', fallback=2)
+        self.SERIES_ON_BREAK = self.cfg.getint('db_status', 'series_on_break', fallback=3)
+        self.SERIES_SUSPENDED = self.cfg.getint('db_status', 'series_suspended', fallback=4)
+        self.SERIES_STOPPED = self.cfg.getint('db_status', 'series_stopped', fallback=5)
+        self.SERIES_COMPLETED = self.cfg.getint('db_status', 'series_completed', fallback=6)
 
         # ЛОГИКА
-        self.HISTORY_DAYS = self.config.getint('logic', 'history_days', fallback=10)
-        self.FUTURE_DAYS = self.config.getint('logic', 'future_days', fallback=10)
-        self.TOTAL_DISPLAY_ROWS = self.config.getint('logic', 'total_display_rows', fallback=21)
-        self.LOW_PATIENTS_THRESHOLD = self.config.getint('logic', 'low_patients_threshold', fallback=1)
-        self.AVG_TIME_PER_PATIENT = self.config.getint('logic', 'avg_time_per_patient', fallback=7)
+        self.HISTORY_DAYS = self.cfg.getint('logic', 'history_days', fallback=10)
+        self.FUTURE_DAYS = self.cfg.getint('logic', 'future_days', fallback=10)
+        self.TOTAL_DISPLAY_ROWS = self.cfg.getint('logic', 'total_display_rows', fallback=21)
+        self.LOW_PATIENTS_THRESHOLD = self.cfg.getint('logic', 'low_patients_threshold', fallback=1)
+        self.AVG_TIME_PER_PATIENT = self.cfg.getint('logic', 'avg_time_per_patient', fallback=7)
         
         # ЦВЕТА
-        self.COLOR_DATE_DEFAULT = self.config.get('colors', 'date_default', fallback="#555")
-        self.COLOR_DATE_TODAY = self.config.get('colors', 'date_today', fallback="#FFFF00")
-        self.COLOR_DATE_FUTURE = self.config.get('colors', 'date_future', fallback="#4A90E2")
-        self.COLOR_DATE_DUPLICATE = self.config.get('colors', 'date_duplicate', fallback="#FF0000")
-        self.COLOR_DUPLICATE_PATIENT = self.config.get('colors', 'duplicate_patient', fallback="#FF6B6B")
-        self.COLOR_TODAY_BORDER = self.config.get('colors', 'today_border', fallback="#990000")
-        self.COLOR_NEW_PATIENT = self.config.get('colors', 'new_patient', fallback="#A5D6A7")
-        self.COLOR_NEW_PATIENT_REPEAT = self.config.get('colors', 'new_patient_repeat', fallback="#4CAF50")
-        self.COLOR_LAST_FRACTION = self.config.get('colors', 'last_fraction', fallback="#FFCC80")
-        self.COLOR_LAST_FRACTION_REPEAT = self.config.get('colors', 'last_fraction_repeat', fallback="#FF9800")
-        self.COLOR_WEEKEND_ZERO = self.config.get('colors', 'weekend_zero', fallback="#777777")
-        self.COLOR_WEEKEND_ZERO_TEXT = self.config.get('colors', 'weekend_zero_text', fallback="#3A3A3A")
+        self.COLOR_DATE_DEFAULT = self.cfg.get('colors', 'date_default', fallback="#555")
+        self.COLOR_DATE_TODAY = self.cfg.get('colors', 'date_today', fallback="#FFFF00")
+        self.COLOR_DATE_FUTURE = self.cfg.get('colors', 'date_future', fallback="#4A90E2")
+        self.COLOR_DATE_DUPLICATE = self.cfg.get('colors', 'date_duplicate', fallback="#FF0000")
+        self.COLOR_DUPLICATE_PATIENT = self.cfg.get('colors', 'duplicate_patient', fallback="#FF6B6B")
+        self.COLOR_TODAY_BORDER = self.cfg.get('colors', 'today_border', fallback="#990000")
+        self.COLOR_NEW_PATIENT = self.cfg.get('colors', 'new_patient', fallback="#A5D6A7")
+        self.COLOR_NEW_PATIENT_REPEAT = self.cfg.get('colors', 'new_patient_repeat', fallback="#4CAF50")
+        self.COLOR_LAST_FRACTION = self.cfg.get('colors', 'last_fraction', fallback="#FFCC80")
+        self.COLOR_LAST_FRACTION_REPEAT = self.cfg.get('colors', 'last_fraction_repeat', fallback="#FF9800")
+        self.COLOR_WEEKEND_ZERO = self.cfg.get('colors', 'weekend_zero', fallback="#777777")
+        self.COLOR_WEEKEND_ZERO_TEXT = self.cfg.get('colors', 'weekend_zero_text', fallback="#3A3A3A")
         
         self.FIXED_CONTROLS_HEIGHT = 115 
     
@@ -169,19 +169,19 @@ class App(customtkinter.CTk):
         # Менеджеры (прокси и будильник) создаются позже, после создания виджетов
 
         # 1. Загрузка конфигурации
-        self.config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
+        self.cfg = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
         config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.ini')
-        self.config.read(config_path, encoding='utf-8-sig')
+        self.cfg.read(config_path, encoding='utf-8-sig')
 
         # Загружаем константы из конфига
         self._load_config_constants()
 
         # Настройки окна
         try:
-            self.initial_w = self.config.getint('window', 'width', fallback=1780)
-            self.initial_h = self.config.getint('window', 'height', fallback=660)
+            self.initial_w = self.cfg.getint('window', 'width', fallback=1780)
+            self.initial_h = self.cfg.getint('window', 'height', fallback=660)
             self.geometry(f"{self.initial_w}x{self.initial_h}")
-            self.title(self.config.get('window', 'title', fallback='TeragisPulse'))
+            self.title(self.cfg.get('window', 'title', fallback='TeragisPulse'))
             self.resizable(False, False)
         except Exception:
             self.initial_w = 1780
@@ -193,22 +193,22 @@ class App(customtkinter.CTk):
         # 2. Загрузка визуальных параметров (цвета, шрифты)
         self.colors = self.load_colors()
         self.status_colors_cfg = {
-            'Completed': self.config.get('status_colors', 'Completed', fallback='#ff8e8a'),
-            'On_Treatment': self.config.get('status_colors', 'On_Treatment', fallback='green')
+            'Completed': self.cfg.get('status_colors', 'Completed', fallback='#ff8e8a'),
+            'On_Treatment': self.cfg.get('status_colors', 'On_Treatment', fallback='green')
         }
         
         # Параметры размеров таблиц
-        self.col_width = self.config.getint('table_main', 'col_width', fallback=135)
-        self.row_height = self.config.getint('table_main', 'row_height', fallback=40)
-        self.font_header_size = self.config.getint('table_main', 'header_font_size', fallback=13)
-        self.font_cell_size = self.config.getint('table_main', 'cell_font_size', fallback=18)
+        self.col_width = self.cfg.getint('table_main', 'col_width', fallback=135)
+        self.row_height = self.cfg.getint('table_main', 'row_height', fallback=40)
+        self.font_header_size = self.cfg.getint('table_main', 'header_font_size', fallback=13)
+        self.font_cell_size = self.cfg.getint('table_main', 'cell_font_size', fallback=18)
 
-        self.client_col_width = self.config.getint('table_clients', 'col_width', fallback=140)
-        self.client_row_height = self.config.getint('table_clients', 'row_height', fallback=30)
-        self.client_header_font_size = self.config.getint('table_clients', 'header_font_size', fallback=12)
-        self.client_cell_font_size = self.config.getint('table_clients', 'cell_font_size', fallback=14)
-        self.limit_fio = self.config.getint('table_clients', 'limit_fio', fallback=20)
-        self.limit_comment = self.config.getint('table_clients', 'limit_comment', fallback=40)
+        self.client_col_width = self.cfg.getint('table_clients', 'col_width', fallback=140)
+        self.client_row_height = self.cfg.getint('table_clients', 'row_height', fallback=30)
+        self.client_header_font_size = self.cfg.getint('table_clients', 'header_font_size', fallback=12)
+        self.client_cell_font_size = self.cfg.getint('table_clients', 'cell_font_size', fallback=14)
+        self.limit_fio = self.cfg.getint('table_clients', 'limit_fio', fallback=20)
+        self.limit_comment = self.cfg.getint('table_clients', 'limit_comment', fallback=40)
         
         # 3. Построение GUI (Сначала создаем всё визуальное)
         # В старой версии тут было только табло
@@ -290,7 +290,7 @@ class App(customtkinter.CTk):
 
         # TELEGRAM БОТ (Инициализируем ДО запуска циклов обновления)
         self.tg_bot = TelegramBot(
-            config=self.config,
+            config=self.cfg,
             list_callback=self._get_today_list_for_bot,
             status_callback=self._on_bot_status_changed,
             on_treatment_callback=self._get_on_treatment_for_bot
@@ -412,9 +412,9 @@ class App(customtkinter.CTk):
             'Default': "#ffffff"
         }
         colors = {}
-        if 'colors' in self.config:
+        if 'colors' in self.cfg:
             for key in defaults:
-                colors[key] = self.config.get('colors', key, fallback=defaults[key])
+                colors[key] = self.cfg.get('colors', key, fallback=defaults[key])
         else:
             colors = defaults
         return colors
@@ -2038,42 +2038,60 @@ class App(customtkinter.CTk):
         if isinstance(patient_info, list) and patient_info and patient_info[0]:
             patient_fio = f"{patient_info[0][0]} {patient_info[0][1]}"
  
-        # ИЗМЕНЕНИЕ 1: добавлен ts.name и расчет Время (факт)
+        # Устанавливаем курсор ожидания
+        self.config(cursor="wait")
+        self.update_idletasks()
+
+        # ИЗМЕНЕНИЕ 1: Оптимизированный запрос через CTE (значительно быстрее)
         query = '''
+            WITH fraction_info AS (
+                SELECT 
+                    tfield.series_id,
+                    tf.fraction_order,
+                    TO_CHAR(MAX(tfp.insert_tms), 'HH24:MI:SS') as fact_time,
+                    (ARRAY_AGG(tfs.name ORDER BY (CASE WHEN tfs.name IN ('OK', 'NORMAL') THEN 1 ELSE 0 END) ASC, tfp.insert_tms DESC))[1] as detail_status
+                FROM tfraction tf
+                JOIN tfraction_part tfp USING (fraction_id)
+                JOIN tfraction_status tfs ON tfp.fraction_status_id = tfs.fraction_status_id
+                JOIN tfield ON tf.field_id = tfield.field_id
+                WHERE tfield.series_id IN (SELECT series_id FROM tseries WHERE patient_id = %s)
+                GROUP BY tfield.series_id, tf.fraction_order
+            )
             SELECT 
                 tc.visitdate,
                 tc.visittime,
                 ts.name,                  -- Серия
-                tcs.name,                 -- Статус
-                (SELECT TO_CHAR(MAX(tfp.insert_tms), 'HH24:MI:SS')
-                 FROM tfraction tf
-                 JOIN tfraction_part tfp USING (fraction_id)
-                 WHERE tf.field_id IN (SELECT field_id FROM tfield WHERE series_id = tc.series_id)
-                   AND tf.fraction_order = tc.fraction_order
-                ) as fact_time,           -- Время (факт)
-                tc.note
+                tcs.name,                 -- Статус (календарный)
+                fi.fact_time,             -- Время (факт) из CTE
+                tc.note,
+                fi.detail_status          -- Детальный статус из CTE
             FROM tcalendar tc
             JOIN tseries ts ON tc.series_id = ts.series_id
             JOIN tcalendar_status tcs ON tc.calendar_status_id = tcs.calendar_status_id
+            LEFT JOIN fraction_info fi ON tc.series_id = fi.series_id AND tc.fraction_order = fi.fraction_order
             WHERE ts.patient_id = %s
             ORDER BY tc.visitdate ASC, tc.visittime ASC;
         '''
  
         try:
-            data = execute_query(query, (patient_id,))
+            # Передаем patient_id дважды (для CTE и для основного фильтра)
+            data = execute_query(query, (patient_id, patient_id))
             self._set_db_status(True)
         except DatabaseError:
             self._set_db_status(False)
             data = []
+        finally:
+            # Возвращаем обычный курсор
+            self.config(cursor="")
  
         cal_win = customtkinter.CTkToplevel(self)
         cal_win.title(f"Календарь пациента: {patient_fio} (ID: {patient_id})")
         cal_win.geometry("900x400")
         cal_win.resizable(False, False)
-        cal_win.lift()
-        cal_win.focus_force()
+        cal_win.after(10, cal_win.lift)
+        cal_win.after(20, cal_win.focus_force)
         cal_win.attributes('-topmost', True)
-        cal_win.after(100, lambda: cal_win.attributes('-topmost', False))
+        cal_win.after(150, lambda: cal_win.attributes('-topmost', False))
  
         frame = customtkinter.CTkScrollableFrame(cal_win)
         frame.pack(fill="both", expand=True)
@@ -2096,31 +2114,39 @@ class App(customtkinter.CTk):
  
                 clr = "white"
  
-                # ИЗМЕНЕНИЕ 3: статус теперь row[3] 
                 status_txt = str(row[3]) if row[3] else ""
- 
-                if "отлечено" in status_txt.lower() or \
-                   "completed" in status_txt.lower() or \
-                   "заверш" in status_txt.lower():
+                detail_txt = str(row[6]) if (len(row) > 6 and row[6]) else ""
+                
+                full_status_txt = status_txt
+                is_completed = any(x in status_txt.lower() for x in ["отлечено", "completed", "заверш"])
+                
+                # Список "нормальных" статусов, которые не считаются вмешательством
+                normal_statuses = ["OK", "NORMAL"]
+                
+                # Если завершено и есть детальный статус, не входящий в список нормальных
+                if is_completed and detail_txt and detail_txt.upper() not in normal_statuses:
+                    full_status_txt = f"{status_txt} / {detail_txt}"
+                    clr = "#FF8C00" # Темно-оранжевый
+                elif is_completed:
                     clr = "green"
- 
-                elif "план" in status_txt.lower() or \
-                     "planned" in status_txt.lower() or \
-                     "inserted" in status_txt.lower():
+                elif any(x in status_txt.lower() for x in ["план", "planned", "inserted"]):
                     clr = "yellow"
- 
                 elif "отмена" in status_txt.lower():
                     clr = "red"
- 
-                elif "лечени" in status_txt.lower() or \
-                     "on" in status_txt.lower():
+                elif any(x in status_txt.lower() for x in ["лечени", "on"]):
                     clr = "#00BFFF"
- 
-                for c, val in enumerate(row):
+
+                # Отрисовка ячеек строки
+                for c in range(len(headers)):
+                    val = row[c]
                     txt = str(val) if val else ""
- 
-                    # Цвет применяется к колонке "Статус" (индекс 3)
-                    fg = clr if c == 3 else "white"
+                    
+                    # Если это колонка Статус (индекс 3), используем расширенный текст и спец. цвет
+                    if c == 3:
+                        txt = full_status_txt
+                        fg = clr
+                    else:
+                        fg = "white"
  
                     customtkinter.CTkLabel(
                         frame,
