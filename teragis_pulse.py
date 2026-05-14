@@ -2009,13 +2009,23 @@ class App(customtkinter.CTk):
         if not text: 
             return
             
-        popup = customtkinter.CTkToplevel(self)
+        # Определяем родителя для всплывающего окна (чтобы оно было поверх "Клиентов")
+        master = self
+        if hasattr(self, 'client_window') and self.client_window and self.client_window.winfo_exists():
+            master = self.client_window
+
+        popup = customtkinter.CTkToplevel(master)
         popup.title("Комментарий")
         popup.geometry("400x300")
         popup.resizable(False, False)
+        
+        if master != self:
+            popup.transient(master)
+            
         popup.lift()
         popup.focus_force()
         popup.attributes('-topmost', True)
+        popup.after(300, lambda: popup.attributes('-topmost', False))
         
         textbox = customtkinter.CTkTextbox(popup, wrap="word")
         textbox.pack(fill="both", expand=True, padx=10, pady=10)
@@ -2084,14 +2094,23 @@ class App(customtkinter.CTk):
             # Возвращаем обычный курсор
             self.config(cursor="")
  
-        cal_win = customtkinter.CTkToplevel(self)
+        # 0. Определяем родителя для нового окна (чтобы оно было поверх "Клиентов")
+        master = self
+        if hasattr(self, 'client_window') and self.client_window and self.client_window.winfo_exists():
+            master = self.client_window
+
+        cal_win = customtkinter.CTkToplevel(master)
         cal_win.title(f"Календарь пациента: {patient_fio} (ID: {patient_id})")
         cal_win.geometry("900x400")
         cal_win.resizable(False, False)
-        cal_win.after(10, cal_win.lift)
-        cal_win.after(20, cal_win.focus_force)
+        
+        if master != self:
+            cal_win.transient(master)
+
+        cal_win.lift()
+        cal_win.focus_force()
         cal_win.attributes('-topmost', True)
-        cal_win.after(150, lambda: cal_win.attributes('-topmost', False))
+        cal_win.after(200, lambda: cal_win.attributes('-topmost', False))
  
         frame = customtkinter.CTkScrollableFrame(cal_win)
         frame.pack(fill="both", expand=True)
