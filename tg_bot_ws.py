@@ -473,8 +473,13 @@ class TelegramBot:
             # Проверяем, что бот в сети, прежде чем слать задачу в поток
             if self._enabled and self._loop and self._connection_state == "connected":
                 try:
-                    # Отправляем задачу в работающий цикл asyncio
-                    asyncio.run_coroutine_threadsafe(self._update_cycle(), self._loop)
+                    # При переходе на "свободно" используем force=True, чтобы обойти
+                    # защиту _last_was_empty (иначе сообщение не обновится, если список пуст)
+                    is_clearing = (target_text == "свободно")
+                    asyncio.run_coroutine_threadsafe(
+                        self._update_cycle(force=is_clearing), 
+                        self._loop
+                    )
                 except RuntimeError:
                     pass # Цикл событий уже остановлен, обновление не требуется
 
