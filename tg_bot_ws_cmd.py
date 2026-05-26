@@ -35,6 +35,9 @@ class BotCommands:
             (self.help_handler, '/help'),
             (self.ping_handler, '/ping'),
             (self.list_handler, r'/list(?:\s+(\d{2}\.\d{2}))?'),
+            (self.find_patient_handler, r'/find_patient(?:\s+.*)?'),
+            (self.patient_info_handler, r'/patient_info(?:\s+.*)?'),
+            (self.patient_info_handler, r'/patient_(\d+)'),
             (self.report_list_handler, r'/excel(?:\s+.*)?'),
             (self.report_handler, r'/summary(?:\s+.*)?'),
             (self.edit_handler, r'/edit(?:\s+.*)?'),
@@ -208,6 +211,8 @@ class BotCommands:
         asyncio.create_task(self._silent_delete(event))
         text = ("<b>Доступные команды:</b>\n\n"
                 "/list [дата] — список пациентов\n"
+                "/find_patient [запрос] — нечеткий поиск пациентов\n"
+                "/patient_info [ФИО/ID] — детальная инфо о пациенте\n"
                 "/summary [1/2/0][дата/пер.] — кол-во\n"
                 "/excel [1/2/0][дата/пер.] — отчет\n"
                 "/edit [ссылка][текст] — редактир.\n"
@@ -458,3 +463,255 @@ class BotCommands:
         except Exception as e:
             logger.error(f"[Bot_CMD] report_list final error: {e}")
             await event.respond(f"❌ Критическая ошибка: {e}")
+
+    def _levenshtein_distance(self, s1: str, s2: str) -> int:
+        """Вычисляет расстояние Левенштейна между двумя строками"""
+        if len(s1) < len(s2):
+            return self._levenshtein_distance(s2, s1)
+        if len(s2) == 0:
+            return len(s1)
+        
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+            
+        return previous_row[-1]
+
+    def _fuzzy_match(self, query: str, patient_fio: str) -> float:
+        """Рассчитывает нечеткое совпадение токенов на основе Левенштейна (0.0 - 1.0)"""
+        q_tokens = [t.lower() for t in query.split() if t]
+        p_tokens = [t.lower() for t in patient_fio.split() if t]
+        
+        if not q_tokens or not p_tokens:
+            return 0.0
+            
+        total_score = 0.0
+        for q_tok in q_tokens:
+            best_tok_score = 0.0
+            for p_tok in p_tokens:
+                if q_tok == p_tok:
+                    score = 1.0
+                elif p_tok.startswith(q_tok) or q_tok.startswith(p_tok):
+                    score = min(len(q_tok), len(p_tok)) / max(len(q_tok), len(p_tok)) * 0.8
+                else:
+                    dist = self._levenshtein_distance(q_tok, p_tok)
+                    max_len = max(len(q_tok), len(p_tok))
+                    score = (max_len - dist) / max_len if max_len > 0 else 0.0
+                
+                if score > best_tok_score:
+                    best_tok_score = score
+            total_score += best_tok_score
+            
+        return total_score / len(q_tokens)
+
+    async def find_patient_handler(self, event):
+        """Нечеткий поиск пациентов по ФИО"""
+        asyncio.create_task(self._silent_delete(event))
+        raw_text = event.message.message
+        query_text = re.sub(r'^/find_patient\s*', '', raw_text).strip()
+        
+        if not query_text:
+            return await event.respond("ℹ️ Пример: <code>/find_patient иванов иван</code>", parse_mode='html')
+            
+        # Загружаем всех пациентов для поиска
+        sql = "SELECT patient_id, surname, forename, title, birthdate FROM tpatient"
+        try:
+            res = await asyncio.to_thread(self.execute_query, sql)
+        except DatabaseError as e:
+            logger.error(f"[Bot_CMD] Ошибка поиска пациентов в БД: {e}")
+            return await event.respond("⚠️ Ошибка подключения к базе данных.")
+            
+        if not res:
+            return await event.respond("📭 База данных пациентов пуста.")
+            
+        candidates = []
+        for p_id, surname, forename, title, birthdate in res:
+            fio = f"{surname or ''} {forename or ''} {title or ''}".strip()
+            score = self._fuzzy_match(query_text, fio)
+            if score >= 0.4:  # Порог сходства
+                candidates.append((p_id, fio, birthdate, score))
+                
+        # Сортируем по убыванию очков сходства
+        candidates.sort(key=lambda x: x[3], reverse=True)
+        
+        if not candidates:
+            return await event.respond(f"📭 Пациенты по запросу «<b>{html.escape(query_text)}</b>» не найдены.", parse_mode='html')
+            
+        # Выводим топ-10 совпадений
+        response_lines = [f"🔍 Результаты поиска по запросу «<b>{html.escape(query_text)}</b>»:\n"]
+        for i, (p_id, fio, birthdate, score) in enumerate(candidates[:10], 1):
+            bd_str = birthdate.strftime('%d.%m.%Y') if birthdate else "—"
+            response_lines.append(f"{i}. 👤 <b>{fio.upper()}</b> (ДР: {bd_str})")
+            response_lines.append(f"   👉 Получить инфо: /patient_{p_id}\n")
+            
+        await event.respond("\n".join(response_lines), parse_mode='html')
+
+    async def patient_info_handler(self, event):
+        """Получение подробной информации о пациенте по ID или нечеткому поиску имени"""
+        asyncio.create_task(self._silent_delete(event))
+        raw_text = event.message.message
+        
+        # Проверяем, вызвано ли через /patient_123
+        match_click = re.match(r'^/patient_(\d+)', raw_text)
+        patient_id = None
+        
+        if match_click:
+            patient_id = int(match_click.group(1))
+            query_arg = str(patient_id)
+        else:
+            query_arg = re.sub(r'^/patient_info\s*', '', raw_text).strip()
+            if not query_arg:
+                return await event.respond("ℹ️ Пример: <code>/patient_info иванов иван</code> или <code>/patient_info 125</code>", parse_mode='html')
+            
+            if query_arg.isdigit():
+                patient_id = int(query_arg)
+                
+        # Если у нас есть patient_id, запрашиваем конкретного пациента
+        if patient_id is not None:
+            sql_pat = "SELECT patient_id, surname, forename, title, birthdate, sex, patient_unique_number FROM tpatient WHERE patient_id = %s"
+            try:
+                res_pat = await asyncio.to_thread(self.execute_query, sql_pat, (patient_id,))
+            except DatabaseError as e:
+                logger.error(f"[Bot_CMD] Ошибка получения пациента: {e}")
+                return await event.respond("⚠️ Ошибка подключения к базе данных.")
+                
+            if not res_pat:
+                return await event.respond(f"❌ Пациент с ID <code>{patient_id}</code> не найден.", parse_mode='html')
+            
+            patient_data = res_pat[0]
+        else:
+            # Ищем нечетким поиском
+            sql_all = "SELECT patient_id, surname, forename, title, birthdate, sex, patient_unique_number FROM tpatient"
+            try:
+                res_all = await asyncio.to_thread(self.execute_query, sql_all)
+            except DatabaseError as e:
+                logger.error(f"[Bot_CMD] Ошибка поиска пациентов в БД: {e}")
+                return await event.respond("⚠️ Ошибка подключения к базе данных.")
+                
+            candidates = []
+            for row in res_all:
+                p_id, surname, forename, title, birthdate, sex, pun = row
+                fio = f"{surname or ''} {forename or ''} {title or ''}".strip()
+                score = self._fuzzy_match(query_arg, fio)
+                if score >= 0.4:
+                    candidates.append((row, fio, score))
+                    
+            candidates.sort(key=lambda x: x[2], reverse=True)
+            
+            if not candidates:
+                return await event.respond(f"📭 Пациенты по запросу «<b>{html.escape(query_arg)}</b>» не найдены.", parse_mode='html')
+                
+            # Если точное совпадение одно (score >= 0.9) или кандидат ровно один с хорошим счетом
+            if len(candidates) == 1 or (candidates[0][2] >= 0.9 and (len(candidates) == 1 or candidates[1][2] < 0.8)):
+                patient_data = candidates[0][0]
+            else:
+                # Предлагаем список
+                response_lines = [f"❓ Найдено несколько похожих пациентов по запросу «<b>{html.escape(query_arg)}</b>». Какого именно прислать?\n"]
+                for i, (row, fio, score) in enumerate(candidates[:10], 1):
+                    p_id, _, _, _, birthdate, _, _ = row
+                    bd_str = birthdate.strftime('%d.%m.%Y') if birthdate else "—"
+                    response_lines.append(f"{i}. 👤 <b>{fio.upper()}</b> (ДР: {bd_str})")
+                    response_lines.append(f"   👉 Получить инфо: /patient_{p_id}\n")
+                return await event.respond("\n".join(response_lines), parse_mode='html')
+                
+        # Формируем полную красивую карточку для конкретного patient_data
+        p_id, surname, forename, title, birthdate, sex, pun = patient_data
+        fio = f"{surname or ''} {forename or ''} {title or ''}".strip().upper()
+        bd_str = birthdate.strftime('%d.%m.%Y') if birthdate else "—"
+        
+        # Рассчитаем возраст
+        age_str = ""
+        if birthdate:
+            today = datetime.now().date()
+            age = today.year - birthdate.year - ((today.month, today.day) < (birthdate.month, birthdate.day))
+            age_str = f" ({age} лет)"
+            
+        gender = "Мужской" if sex == "male" else ("Женский" if sex == "female" else str(sex))
+        
+        # Получаем серии (курсы лечения)
+        sql_series = """
+            SELECT series_id, name, totaldose, fractionsnumber, note, insert_tms, series_status_id
+            FROM tseries
+            WHERE patient_id = %s
+            ORDER BY insert_tms DESC
+        """
+        try:
+            res_series = await asyncio.to_thread(self.execute_query, sql_series, (p_id,))
+        except DatabaseError as e:
+            logger.error(f"[Bot_CMD] Ошибка получения серий: {e}")
+            res_series = []
+            
+        series_blocks = []
+        for s_id, s_name, plan_dose, plan_fr, note, insert_tms, s_status_id in res_series:
+            # 1. Дата создания серии
+            creation_date = insert_tms.strftime('%d.%m.%Y') if insert_tms else "—"
+            
+            # 2. Определяем РО отделение по врачу / серии
+            _, _, _, office = identification_func(note) if note else ('🧑‍⚕ —', '☢ —', '—', '0')
+            dept_str = f"{office}РО" if office in ['1', '2'] else "Прочее (0)"
+            
+            # 3. Получаем даты первого и последнего завершенного сеанса в tcalendar
+            sql_dates = """
+                SELECT MIN(visitdate), MAX(visitdate), COUNT(calendar_id)
+                FROM tcalendar
+                WHERE series_id = %s AND calendar_status_id = %s
+            """
+            try:
+                res_dates = await asyncio.to_thread(self.execute_query, sql_dates, (s_id, self.STATUS_COMPLETED))
+            except DatabaseError:
+                res_dates = [(None, None, 0)]
+                
+            first_date_val, last_date_val, completed_fr = res_dates[0] if res_dates else (None, None, 0)
+            
+            first_session_str = first_date_val.strftime('%d.%m.%Y') if first_date_val else "—"
+            last_session_str = last_date_val.strftime('%d.%m.%Y') if last_date_val else "—"
+            
+            # 4. Подсчитываем реальную полученную дозу (суммируем dose_real по сеансам)
+            # В tcalendar завершенный сеанс означает, что фракция отпущена.
+            # Доза за одну фракцию = plan_dose / plan_fr (если plan_fr > 0)
+            single_dose = plan_dose / plan_fr if plan_fr and plan_fr > 0 else 0.0
+            received_dose = completed_fr * single_dose
+            
+            # 5. Статус серии
+            status_map = {
+                1: "В лечении ☢",
+                2: "Не начато 🆕",
+                3: "Перерыв ⏸",
+                4: "Приостановлено 🛑",
+                5: "Остановлено ❌",
+                6: "Завершено 🏁"
+            }
+            status_str = status_map.get(s_status_id, f"Статус {s_status_id}")
+            
+            # Формируем блок серии
+            block = (
+                f"🔸 <b>Серия:</b> «{html.escape(str(s_name))}»\n"
+                f"   🏥 <b>Отделение:</b> {dept_str} | 📌 <b>Статус:</b> {status_str}\n"
+                f"   📅 <b>Создана:</b> {creation_date}\n"
+                f"   📅 <b>Первый сеанс:</b> {first_session_str}\n"
+                f"   📅 <b>Последний сеанс:</b> {last_session_str}\n"
+                f"   📈 <b>Фракции:</b> {completed_fr} из {plan_fr or 0}\n"
+                f"   ☢ <b>Доза:</b> {round(received_dose, 2)} Гр из {plan_dose or 0} Гр\n"
+                f"   📝 <b>Примечание:</b> {html.escape(note or '—')}"
+            )
+            series_blocks.append(block)
+            
+        series_text = "\n\n".join(series_blocks) if series_blocks else "📭 Лечебные курсы не найдены."
+        
+        card_text = (
+            f"👤 <b>КАРТОЧКА ПАЦИЕНТА:</b> {fio}\n"
+            f"─────────────────────\n"
+            f"🆔 <b>ID пациента:</b> <code>{p_id}</code>\n"
+            f"🔢 <b>Уникальный номер:</b> <code>{pun or '—'}</code>\n"
+            f"📅 <b>Дата рождения:</b> {bd_str}{age_str}\n"
+            f"🚻 <b>Пол:</b> {gender}\n\n"
+            f"📚 <b>КУРСЫ ЛЕЧЕНИЯ (СЕРИИ):</b>\n\n"
+            f"{series_text}"
+        )
+        await event.respond(card_text, parse_mode='html')
