@@ -6,6 +6,7 @@ import asyncio
 import logging
 import re
 import os
+import html
 from database import execute_query, DatabaseError 
 from identification import identification_func
 
