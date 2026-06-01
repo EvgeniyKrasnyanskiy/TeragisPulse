@@ -8,12 +8,22 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg2
 from dotenv import load_dotenv
 
-# Загрузка настроек из файлов (.env в текущей или родительской папке)
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
+# Умное определение рабочей директории (для работы как в виде скрипта, так и в скомпилированном .exe)
+def get_real_work_dir():
+    if getattr(sys, 'frozen', False):
+        # Если запущено как скомпилированный бинарник, берем папку, где лежит сам .exe
+        return os.path.dirname(sys.executable)
+    # Если запущен скрипт, берем папку скрипта
+    return os.path.dirname(os.path.abspath(__file__))
 
-load_dotenv(os.path.join(current_dir, '.env'))
-load_dotenv(os.path.join(parent_dir, '.env'))
+work_dir = get_real_work_dir()
+
+# Каскадная загрузка .env из папки запуска, папки скрипта или родительских каталогов
+load_dotenv(os.path.join(work_dir, '.env'))
+load_dotenv(os.path.join(os.path.dirname(work_dir), '.env'))
+# Если скрипт лежит в подпапке db_notifier, корень будет на 2 уровня выше
+if not getattr(sys, 'frozen', False):
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(work_dir)), '.env'))
 
 # Дефолтные реквизиты БД
 DEFAULT_DB_NAME = os.getenv('DB_NAME', 'veri')
