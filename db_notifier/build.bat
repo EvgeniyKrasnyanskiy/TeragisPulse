@@ -1,51 +1,50 @@
 @echo off
-chcp 65001 > nul
-title Сборка Teragis Notifier (.exe)
+title Teragis Notifier Build Tool
 
 echo ====================================================
-echo    Сборка Teragis Notifier в исполняемый файл (.exe)
+echo    Teragis Notifier Build Tool (.exe)
 echo ====================================================
 echo.
 
-:: Проверка наличия Python
+:: Check Python
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [ОШИБКА] Python не найден в системе!
-    echo Пожалуйста, добавьте Python в переменную среды PATH.
+    echo [ERROR] Python was not found in your system PATH!
+    echo Please install Python and add it to PATH.
     goto end
 )
 
-:: Установка/проверка PyInstaller
-echo [1/3] Проверка наличия PyInstaller...
+:: Check PyInstaller
+echo [1/3] Checking PyInstaller...
 pip show pyinstaller >nul 2>&1
 if %errorlevel% neq 0 (
-    echo PyInstaller не найден. Установка PyInstaller...
+    echo PyInstaller was not found. Installing...
     pip install pyinstaller
 ) else (
-    echo PyInstaller обнаружен.
+    echo PyInstaller is already installed.
 )
 echo.
 
-:: Установка зависимостей
-echo [2/3] Установка зависимостей из requirements.txt...
+:: Install dependencies
+echo [2/3] Installing dependencies from requirements.txt...
 pip install -r requirements.txt
 echo.
 
-:: Запуск сборки
-echo [3/3] Сборка приложения через PyInstaller...
-echo Это может занять около минуты...
+:: Run PyInstaller
+echo [3/3] Building application with PyInstaller...
+echo This might take a minute...
 pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean main.py
 
 if %errorlevel% equ 0 (
     echo.
     echo ====================================================
-    echo [УСПЕХ] Сборка успешно завершена!
-    echo Исполняемый файл находится по пути:
+    echo [SUCCESS] Build completed successfully!
+    echo Executable is located at:
     echo %CD%\dist\TeragisNotifier.exe
     echo ====================================================
 ) else (
     echo.
-    echo [ОШИБКА] Произошел сбой при сборке приложения.
+    echo [ERROR] Build failed.
 )
 
 :end
