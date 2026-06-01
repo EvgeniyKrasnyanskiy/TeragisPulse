@@ -24,7 +24,7 @@ from db_listener import DBListener
 class NotificationCard(customtkinter.CTkFrame):
     """Виджет отдельной карточки уведомления."""
     
-    def __init__(self, master, fio, start_date, on_close_callback, **kwargs):
+    def __init__(self, master, fio, details, on_close_callback, **kwargs):
         # Очень темный фон для карточки, скругленные углы
         super().__init__(
             master, 
@@ -32,7 +32,7 @@ class NotificationCard(customtkinter.CTkFrame):
             border_width=1, 
             border_color="#1f538d", # Приятный синий акцентный бордюр
             corner_radius=12,
-            height=85,
+            height=145,
             **kwargs
         )
         self.on_close_callback = on_close_callback
@@ -63,14 +63,14 @@ class NotificationCard(customtkinter.CTkFrame):
         )
         self.close_btn.place(relx=1.0, rely=0.0, anchor="ne", x=-5, y=5)
         
-        # Контент (ФИО и дата старта)
+        # Контент (ФИО и детальные клинические параметры)
         self.title_label = customtkinter.CTkLabel(
             self,
-            text="Пациент на аппарате!",
+            text="Пациент на лечении!",
             font=("Helvetica", 11, "bold"),
             text_color="#1f538d"
         )
-        self.title_label.pack(anchor="w", pady=(8, 0))
+        self.title_label.pack(anchor="w", pady=(8, 0), padx=(10, 0))
         
         self.fio_label = customtkinter.CTkLabel(
             self,
@@ -78,15 +78,16 @@ class NotificationCard(customtkinter.CTkFrame):
             font=("Helvetica", 13, "bold"),
             text_color="white"
         )
-        self.fio_label.pack(anchor="w", pady=(2, 0))
+        self.fio_label.pack(anchor="w", pady=(2, 0), padx=(10, 0))
         
-        self.start_label = customtkinter.CTkLabel(
+        self.details_label = customtkinter.CTkLabel(
             self,
-            text=f"⏱ {start_date}",
+            text=details,
             font=("Helvetica", 11),
-            text_color="#AAAAAA"
+            text_color="#DDDDDD",
+            justify="left"
         )
-        self.start_label.pack(anchor="w", pady=(2, 8))
+        self.details_label.pack(anchor="w", pady=(2, 8), padx=(10, 0))
         
         # Запуск таймера на автоматическое закрытие через 5 минут (300 000 мс)
         self.timer_id = self.after(300000, self.close_with_fade)
@@ -117,9 +118,9 @@ class NotificationWindow(customtkinter.CTkToplevel):
         self.configure(fg_color="black")
         self.attributes("-alpha", 0.95) # Легкая общая прозрачность стека
         
-        # Размеры окна
+        # Размеры окна (высота карточки увеличена до 145px)
         self.card_width = 320
-        self.card_height = 85
+        self.card_height = 145
         self.spacing = 10
         self.margin_x = 20
         self.margin_y = 65  # Безопасный отступ от нижнего края (над панелью задач)
@@ -129,7 +130,7 @@ class NotificationWindow(customtkinter.CTkToplevel):
         # Прячем окно изначально
         self.withdraw()
         
-    def add_notification(self, fio, start_date):
+    def add_notification(self, fio, details):
         """Добавляет новое уведомление сверху стека."""
         # 1. Если карточек уже 5, принудительно удаляем самую старую (первую в списке, т.е. нижнюю)
         if len(self.cards) >= 5:
@@ -140,7 +141,7 @@ class NotificationWindow(customtkinter.CTkToplevel):
         card = NotificationCard(
             self, 
             fio=fio, 
-            start_date=start_date, 
+            details=details, 
             on_close_callback=self._remove_card
         )
         
@@ -274,10 +275,10 @@ class NotifierApp:
             while True:
                 event = self.event_queue.get_nowait()
                 fio = event.get('fio')
-                start_date = event.get('start_date')
+                details = event.get('details')
                 
                 # Подаем сигнал окну уведомлений
-                self.notif_win.add_notification(fio, start_date)
+                self.notif_win.add_notification(fio, details)
                 
                 # Проигрываем легкий системный писк (необязательно, но приятно)
                 try:
