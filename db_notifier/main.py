@@ -66,7 +66,7 @@ class NotificationCard(customtkinter.CTkFrame):
         # Контент (ФИО и дата старта)
         self.title_label = customtkinter.CTkLabel(
             self,
-            text="Новый план готов!",
+            text="Пациент на аппарате!",
             font=("Helvetica", 11, "bold"),
             text_color="#1f538d"
         )
@@ -82,7 +82,7 @@ class NotificationCard(customtkinter.CTkFrame):
         
         self.start_label = customtkinter.CTkLabel(
             self,
-            text=f"⏱ Старт лечения: {start_date}",
+            text=f"⏱ {start_date}",
             font=("Helvetica", 11),
             text_color="#AAAAAA"
         )
