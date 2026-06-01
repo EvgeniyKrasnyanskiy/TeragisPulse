@@ -14,7 +14,7 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from auto_discovery import discover_db_host, get_db_credentials
+from auto_discovery import discover_db_host, get_db_credentials, log_debug
 from identification import identification_func
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ class DBListener(threading.Thread):
 
     def run(self):
         logger.info("[DBListener]: Запуск фонового прослушивания БД...")
+        log_debug("Запуск фонового потока DBListener")
         reconnect_delay = 5
         
         while not self._stop_event.is_set():
@@ -72,28 +73,31 @@ class DBListener(threading.Thread):
                 # Подписываемся на канал изменений
                 cursor.execute("LISTEN series_changes")
                 logger.info(f"[DBListener]: Успешно подключено к СУБД {host}. Слушаем канал series_changes...")
+                log_debug(f"Успешный LISTEN series_changes на хосте {host}")
                 
                 if self.on_status_change:
                     self.on_status_change(True, f"Подключено ({host})")
 
-                # 3. Цикл ожидания событий
+                # 3. Цикл ожидания событий (надежный опрос сокета, совместимый с Windows)
                 while not self._stop_event.is_set():
-                    # Проверяем, есть ли данные в сокете (таймаут 1 секунда)
-                    if select.select([conn], [], [], 1.0) == ([], [], []):
-                        continue
-                        
                     conn.poll()
                     
                     while conn.notifies:
                         notify = conn.notifies.pop(0)
                         try:
                             notif_data = json.loads(notify.payload)
+                            log_debug(f"Получено NOTIFY событие: {notif_data}")
                             self._process_notification(cursor, notif_data)
                         except Exception as parse_err:
                             logger.error(f"[DBListener]: Ошибка парсинга события: {parse_err}")
+                            log_debug(f"Ошибка обработки NOTIFY: {parse_err}")
+                            
+                    # Пауза в 2 секунды (точно так же как в teragis_pulse.py!)
+                    time.sleep(2.0)
                             
             except Exception as conn_err:
                 logger.error(f"[DBListener]: Ошибка соединения с БД: {conn_err}. Реконнект через {reconnect_delay}с.")
+                log_debug(f"Сбой соединения или LISTEN: {conn_err}")
                 if self.on_status_change:
                     self.on_status_change(False, "Сбой связи")
                 time.sleep(reconnect_delay)
@@ -113,7 +117,8 @@ class DBListener(threading.Thread):
         # Получаем данные о докторе, физике и укладке с помощью вашей оригинальной функции
         try:
             doc, phys, lay, office = identification_func(note)
-        except Exception:
+        except Exception as ident_err:
+            log_debug(f"Ошибка парсинга персонала через identification_func: {ident_err}")
             doc, phys, lay, office = '🧑‍⚕ —', '☢ —', '—', '0'
 
         # Сборка подробной информации
@@ -135,6 +140,7 @@ class DBListener(threading.Thread):
                     start_date_str = visitdate.strftime('%d.%m.%Y')
             except Exception as db_err:
                 logger.error(f"[DBListener]: Ошибка запроса даты старта: {db_err}")
+                log_debug(f"Ошибка запроса даты из tcalendar: {db_err}")
                 
         if not start_date_str:
             start_date_str = time.strftime('%d.%m.%Y')
@@ -144,10 +150,6 @@ class DBListener(threading.Thread):
             fio = "НЕИЗВЕСТНЫЙ ПАЦИЕНТ"
             
         # Формируем строку деталей в точности как в Telegram-боте
-        # 📊 2.67Гр x 15фр = 40.05Гр
-        # 🧑⚕ Медведев
-        # ☢️ Скворцова
-        # 📝 Без млк лечение с 02.06.2026
         details_list = [
             f"📊 {dose_step}Гр x {frac_n}фр = {total_d}Гр",
             f"{doc}",
@@ -166,7 +168,7 @@ class DBListener(threading.Thread):
             "details": details
         }
         
-        logger.info(f"[DBListener]: Успешно сформировано событие для {fio}")
+        log_debug(f"Сформировано GUI событие: FIO={fio}, Details={details_list}")
         self.event_queue.put(event)
 
 
