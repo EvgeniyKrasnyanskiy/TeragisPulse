@@ -80,7 +80,7 @@ DB_PORT=5432            # Порт
 
 2. Соберите бинарный файл (с указанием путей к общей корневой папке `dist` и `build`):
    ```bash
-   pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean --paths=".." --hidden-import="identification" --distpath="../dist" --workpath="../build" main.py
+   pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean --paths=".." --hidden-import="identification" --distpath="../dist" --workpath="../build" --specpath="../build" main.py
    ```
 
 3. Исполняемый файл появится в корневой папке `dist/`. Перенесите его на любую станцию Xubuntu, дайте права на выполнение и запустите!
