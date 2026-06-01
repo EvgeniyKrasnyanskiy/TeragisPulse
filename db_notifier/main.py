@@ -4,6 +4,7 @@ import sys
 import queue
 import time
 import threading
+import tkinter
 import customtkinter
 import pystray
 from PIL import Image, ImageDraw
@@ -22,34 +23,32 @@ logger = logging.getLogger("db_notifier")
 from db_listener import DBListener
 from auto_discovery import log_debug
 
-class NotificationCard(customtkinter.CTkFrame):
-    """Виджет отдельной карточки уведомления."""
+class NotificationCard(tkinter.Frame):
+    """Виджет отдельной карточки уведомления на базе стандартного tkinter.Frame (для обхода багов DPI-масштабирования float)."""
     
     def __init__(self, master, fio, details, on_close_callback, **kwargs):
-        # Очень темный фон для карточки, скругленные углы.
-        # Не передаем width/height в super().__init__, чтобы избежать багов масштабирования float DPI в Tkinter.
+        # Используем стандартный Frame с темным фоном и акцентной синей рамкой.
+        # Стандартный Frame не подвержен багам float-масштабирования CustomTkinter.
         super().__init__(
             master, 
-            fg_color="#1E1E1E", 
-            border_width=1, 
-            border_color="#1f538d", # Приятный синий акцентный бордюр
-            corner_radius=12,
+            bg="#1E1E1E", 
+            highlightbackground="#1f538d", # Приятный синий акцентный бордюр
+            highlightcolor="#1f538d",
+            highlightthickness=1,
+            width=320,
+            height=145,
             **kwargs
         )
         self.on_close_callback = on_close_callback
         
-        # Задаем размеры через configure (он безопасно приводит к целым числам на системном уровне)
-        self.configure(width=320, height=145)
-        
         # Запрещаем виджетам сжимать фрейм
         self.pack_propagate(False)
         
-        # Синяя полоска-индикатор слева
-        self.indicator = customtkinter.CTkFrame(
+        # Синяя полоска-индикатор слева (на базе стандартного Frame)
+        self.indicator = tkinter.Frame(
             self, 
             width=5, 
-            fg_color="#1f538d", 
-            corner_radius=0
+            bg="#1f538d"
         )
         self.indicator.pack(side="left", fill="y", padx=(1, 10))
         
@@ -72,7 +71,8 @@ class NotificationCard(customtkinter.CTkFrame):
             self,
             text="Пациент на лечении!",
             font=("Helvetica", 11, "bold"),
-            text_color="#1f538d"
+            text_color="#1f538d",
+            bg_color="#1E1E1E"
         )
         self.title_label.pack(anchor="w", pady=(8, 0), padx=(10, 0))
         
@@ -80,7 +80,8 @@ class NotificationCard(customtkinter.CTkFrame):
             self,
             text=f"👤 {fio}",
             font=("Helvetica", 13, "bold"),
-            text_color="white"
+            text_color="white",
+            bg_color="#1E1E1E"
         )
         self.fio_label.pack(anchor="w", pady=(2, 0), padx=(10, 0))
         
@@ -89,7 +90,8 @@ class NotificationCard(customtkinter.CTkFrame):
             text=details,
             font=("Helvetica", 11),
             text_color="#DDDDDD",
-            justify="left"
+            justify="left",
+            bg_color="#1E1E1E"
         )
         self.details_label.pack(anchor="w", pady=(2, 8), padx=(10, 0))
         
@@ -133,7 +135,7 @@ class NotifierApp(customtkinter.CTk):
         # 3. Инициализация очереди событий
         self.event_queue = queue.Queue()
         
-        # 4. Запуск фоного трея
+        # 4. Запуск фонового трея
         self.tray_icon = None
         self._init_tray()
         
@@ -211,7 +213,7 @@ class NotifierApp(customtkinter.CTk):
                 log_debug(f"main.py: Превышен лимит карточек, удаляем самую старую ({oldest_card.fio_label.cget('text')})")
                 oldest_card.close()
                 
-            # 2. Создаем новую карточку
+            # 2. Создаем новую карточку (на базе надежного стандартного tkinter.Frame)
             card = NotificationCard(
                 self, 
                 fio=fio, 
@@ -313,7 +315,7 @@ class NotifierApp(customtkinter.CTk):
         except Exception as e:
             log_debug(f"main.py: Ошибка при обработке очереди событий: {e}")
             
-        # Планируем следующую проверку через 100 мс
+        # Plan следующую проверку через 100 мс
         self.after(100, self._poll_events)
 
     def on_exit(self, icon=None, item=None):
