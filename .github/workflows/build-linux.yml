@@ -1,0 +1,44 @@
+name: Build Teragis Notifier for Linux
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk libx11-dev
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pillow pystray psycopg2-binary python-dotenv
+
+      - name: Build with PyInstaller
+        run: |
+          cd db_notifier
+          pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean --paths=".." --hidden-import="identification" --distpath="../dist" --workpath="../build" --specpath="../build" main.py
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: TeragisNotifier-Linux
+          path: dist/TeragisNotifier
