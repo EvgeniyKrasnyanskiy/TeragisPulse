@@ -61,22 +61,32 @@ DB_PORT=5432            # Порт
 
 ## 📦 Сборка в один исполняемый файл (PyInstaller)
 
-Чтобы распространять приложение в виде одного-единственного файла, который можно запустить на любом компьютере с Xubuntu (или Windows) даже **без установленного Python**:
+Чтобы распространять приложение в виде одного-единственного файла, который можно запустить на любом компьютере с Xubuntu или Windows даже **без установленного Python**:
 
+### 🪟 Быстрая сборка для Windows:
+Просто дважды кликните по файлу [build.bat](file:///d:/Users/physicist/Desktop/ken/TeragisPulse/db_notifier/build.bat) в папке `db_notifier`.
+Скрипт автоматически:
+1. Проверит наличие Python.
+2. Установит `pyinstaller`, если он не установлен.
+3. Скачает зависимости из `requirements.txt`.
+4. Запустит сборку в один `.exe` файл без консоли.
+5. Готовый файл сохранится в папке `db_notifier/dist/TeragisNotifier.exe`.
+
+### 🐧 Сборка для Linux (Xubuntu):
 1. Установите PyInstaller:
    ```bash
    pip3 install pyinstaller
    ```
 
-2. Соберите бинарный файл по готовому конфигурационному файлу сборки:
+2. Соберите бинарный файл:
    ```bash
-   pyinstaller db_notifier.spec
+   pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean main.py
    ```
 
-3. Исполняемый файл появится в папке `dist/db_notifier`. Перенесите его на любую станцию Xubuntu, дайте права на выполнение и запустите!
+3. Исполняемый файл появится в папке `dist`. Перенесите его на любую станцию Xubuntu, дайте права на выполнение и запустите!
    ```bash
-   chmod +x db_notifier
-   ./db_notifier
+   chmod +x dist/TeragisNotifier
+   ./dist/TeragisNotifier
    ```
 
 ---
