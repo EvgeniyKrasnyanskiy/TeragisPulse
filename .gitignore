@@ -15,3 +15,8 @@ errors.txt
 constants.py
 config.ini
 schema_VERI.sql
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec

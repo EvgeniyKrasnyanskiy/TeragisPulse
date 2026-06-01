@@ -1,6 +1,7 @@
 # TeragisPulse.py
 import tkinter as tk
 from tkinter import messagebox
+# pyrefly: ignore [missing-import]
 import customtkinter
 from database import execute_query, logger, close_db_pool, DatabaseError
 from datetime import datetime, date, timedelta
