@@ -146,15 +146,26 @@ def get_local_ip():
 def discover_db_host():
     """
     Основной метод автоопределения хоста базы данных.
-    Каскад: Кэш -> Локальный -> Прописанный в .env -> Сканирование сети
+    Каскад приоритетов: Хост из .env -> Кэш -> Локальный localhost -> Сканирование сети
     """
     log_debug("--- Запуск автоопределения сервера БД ---")
     creds = get_db_credentials()
     log_debug(f"Используемые реквизиты авторизации: dbname={creds['dbname']}, user={creds['user']}, port={creds['port']}")
     
-    # 1. Проверяем кэш
+    # 1. Проверяем хост, прописанный в .env (наивысший приоритет)
+    env_host = os.getenv('DB_HOST')
+    log_debug(f"1. Проверка хоста из настроек (DB_HOST): {env_host}")
+    if env_host:
+        if test_pg_connection(env_host, creds):
+            log_debug(f"-> Хост {env_host} из .env успешно подключен!")
+            set_cached_host(env_host)
+            return env_host
+        else:
+            log_debug(f"-> Хост {env_host} из .env НЕ отвечает.")
+
+    # 2. Проверяем кэш
     cached = get_cached_host()
-    log_debug(f"1. Проверка кэшированного хоста: {cached}")
+    log_debug(f"2. Проверка кэшированного хоста: {cached}")
     if cached:
         if test_pg_connection(cached, creds):
             log_debug(f"-> Кэш {cached} рабочий. Возвращаем его.")
@@ -162,23 +173,12 @@ def discover_db_host():
         else:
             log_debug(f"-> Кэш {cached} не отвечает.")
 
-    # 2. Проверяем localhost
-    log_debug("2. Проверка подключения к localhost (127.0.0.1)...")
+    # 3. Проверяем localhost
+    log_debug("3. Проверка подключения к localhost (127.0.0.1)...")
     if test_pg_connection('127.0.0.1', creds):
         log_debug("-> Локальный хост рабочий!")
         set_cached_host('127.0.0.1')
         return '127.0.0.1'
-
-    # 3. Проверяем хост, прописанный в .env
-    env_host = os.getenv('DB_HOST')
-    log_debug(f"3. Проверка хоста из настроек (DB_HOST): {env_host}")
-    if env_host and env_host not in ('127.0.0.1', 'localhost'):
-        if test_pg_connection(env_host, creds):
-            log_debug(f"-> Хост {env_host} из .env успешно подключен!")
-            set_cached_host(env_host)
-            return env_host
-        else:
-            log_debug(f"-> Хост {env_host} из .env НЕ отвечает.")
 
     # 4. Сканируем локальную сеть
     local_ip = get_local_ip()
