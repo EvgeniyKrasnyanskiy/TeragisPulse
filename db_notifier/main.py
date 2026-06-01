@@ -6,7 +6,10 @@ Teragis Notifier — АРМ-клиент уведомлений.
 """
 import os
 import sys
+import platform
 import queue
+import shutil
+import subprocess
 import time
 import threading
 import tkinter as tk
@@ -44,6 +47,22 @@ TEXT_MUTED = "#777777"
 HOVER_DARK = "#333333"
 
 
+def _detect_ui_font() -> str:
+    """Определяет лучший UI-шрифт для текущей ОС."""
+    system = platform.system()
+    if system == "Windows":
+        return "Segoe UI"
+    elif system == "Darwin":
+        return "Helvetica Neue"
+    # Linux: «Sans» — универсальный алиас fontconfig,
+    # автоматически разрешается в лучший sans-serif шрифт системы
+    # (Ubuntu на Xubuntu, Noto Sans на Fedora, DejaVu Sans и т.д.)
+    return "Sans"
+
+
+UI_FONT = _detect_ui_font()
+
+
 class NotificationCard(tk.Frame):
     """Виджет отдельной карточки уведомления (чистый tkinter)."""
 
@@ -72,28 +91,28 @@ class NotificationCard(tk.Frame):
         tk.Label(
             content, text="Пациент на лечении!",
             bg=BG_CARD, fg=ACCENT_BLUE,
-            font=("Segoe UI", 9, "bold"), anchor="w"
+            font=(UI_FONT, 9, "bold"), anchor="w"
         ).pack(fill="x")
 
         # ФИО
         tk.Label(
             content, text=f"👤 {fio}",
             bg=BG_CARD, fg=TEXT_WHITE,
-            font=("Segoe UI", 11, "bold"), anchor="w"
+            font=(UI_FONT, 11, "bold"), anchor="w"
         ).pack(fill="x", pady=(2, 0))
 
         # Детали (многострочный)
         tk.Label(
             content, text=details,
             bg=BG_CARD, fg=TEXT_GREY,
-            font=("Segoe UI", 9), anchor="w", justify="left"
+            font=(UI_FONT, 9), anchor="w", justify="left"
         ).pack(fill="x", pady=(2, 0))
 
         # Кнопка закрытия «×»
         close_btn = tk.Label(
             self, text="×",
             bg=BG_CARD, fg=TEXT_MUTED,
-            font=("Segoe UI", 14, "bold"), cursor="hand2"
+            font=(UI_FONT, 14, "bold"), cursor="hand2"
         )
         close_btn.place(relx=1.0, rely=0.0, anchor="ne", x=-6, y=4)
         close_btn.bind("<Button-1>", lambda e: self.close())
@@ -262,6 +281,50 @@ class NotifierApp:
         except Exception as e:
             log_debug(f"main.py: Ошибка в _repack_cards: {e}")
 
+    # --- Звуковое оповещение ---
+
+    def _play_notification_sound(self) -> None:
+        """Воспроизводит короткий звуковой сигнал (кроссплатформенно)."""
+        def _sound_worker():
+            try:
+                # Windows: winsound.Beep через системный спикер
+                if winsound:
+                    winsound.Beep(2000, 150)
+                    return
+
+                # Linux: воспроизводим системный звук уведомления
+                if platform.system() == "Linux":
+                    # Ищем подходящий аудио-плейер
+                    player: str | None = None
+                    for cmd in ("paplay", "pw-play", "aplay"):
+                        if shutil.which(cmd):
+                            player = cmd
+                            break
+
+                    if player:
+                        # Стандартные звуки freedesktop (Ubuntu/Xubuntu)
+                        for sound_file in (
+                            "/usr/share/sounds/freedesktop/stereo/message.oga",
+                            "/usr/share/sounds/freedesktop/stereo/bell.oga",
+                            "/usr/share/sounds/freedesktop/stereo/complete.oga",
+                        ):
+                            if os.path.exists(sound_file):
+                                subprocess.run(
+                                    [player, sound_file],
+                                    timeout=5, capture_output=True
+                                )
+                                return
+
+                    # Фолбек: BEL-символ через терминал
+                    subprocess.run(
+                        ["bash", "-c", "printf '\\a'"],
+                        timeout=2, capture_output=True
+                    )
+            except Exception:
+                pass
+
+        threading.Thread(target=_sound_worker, daemon=True).start()
+
     # --- Опрос очереди ---
 
     def _poll_events(self):
@@ -273,20 +336,7 @@ class NotifierApp:
                 details = event.get('details')
                 log_debug(f"main.py: Извлечено событие из очереди для FIO={fio}")
                 self.add_notification(fio, details)
-                try:
-                    if winsound:
-                        # Воспроизводим короткий звуковой сигнал в фоновом потоке, чтобы не блокировать GUI-поток
-                        threading.Thread(
-                            target=lambda: winsound.Beep(2000, 150),
-                            daemon=True
-                        ).start()
-                    else:
-                        self.root.bell()
-                except Exception:
-                    try:
-                        self.root.bell()
-                    except Exception:
-                        pass
+                self._play_notification_sound()
                 self.event_queue.task_done()
         except queue.Empty:
             pass
