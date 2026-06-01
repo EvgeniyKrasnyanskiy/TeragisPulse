@@ -302,6 +302,10 @@ class NotifierApp:
 
             if not self.cards:
                 log_debug("main.py: Нет карточек — скрываем окно")
+                try:
+                    self.root.overrideredirect(False)
+                except Exception:
+                    pass
                 self.root.withdraw()
                 return
 
@@ -319,15 +323,29 @@ class NotifierApp:
 
             log_debug(f"main.py: Геометрия: {self.card_width}x{total_h}+{x}+{y}")
 
-            self.root.overrideredirect(True)
-            self.root.wm_attributes("-topmost", True)
-            self.root.attributes("-alpha", 0.95)
-            self.root.geometry(f"{self.card_width}x{total_h}+{x}+{y}")
-            self.root.deiconify()
-            self.root.update_idletasks()
-            self.root.lift()
-            self.root.wm_attributes("-topmost", True)
-            log_debug("main.py: Окно отображено (deiconify + lift)")
+            if platform.system() == "Linux":
+                # На X11/Linux сначала нужно отобразить окно (deiconify), 
+                # и только потом применять overrideredirect(True), иначе WM скроет его навсегда.
+                self.root.deiconify()
+                self.root.overrideredirect(True)
+                self.root.geometry(f"{self.card_width}x{total_h}+{x}+{y}")
+                try:
+                    self.root.attributes("-alpha", 0.95)
+                except Exception:
+                    pass
+                self.root.lift()
+                self.root.update()
+                log_debug("main.py: [Linux] Окно отображено через deiconify + overrideredirect(True)")
+            else:
+                self.root.overrideredirect(True)
+                self.root.wm_attributes("-topmost", True)
+                self.root.attributes("-alpha", 0.95)
+                self.root.geometry(f"{self.card_width}x{total_h}+{x}+{y}")
+                self.root.deiconify()
+                self.root.update_idletasks()
+                self.root.lift()
+                self.root.wm_attributes("-topmost", True)
+                log_debug("main.py: [Windows] Окно отображено")
         except Exception as e:
             log_debug(f"main.py: Ошибка в _repack_cards: {e}")
 
