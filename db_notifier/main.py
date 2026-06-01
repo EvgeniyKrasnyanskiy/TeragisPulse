@@ -20,6 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger("db_notifier")
 
 from db_listener import DBListener
+from auto_discovery import log_debug
 
 class NotificationCard(customtkinter.CTkFrame):
     """Виджет отдельной карточки уведомления."""
@@ -28,11 +29,12 @@ class NotificationCard(customtkinter.CTkFrame):
         # Очень темный фон для карточки, скругленные углы
         super().__init__(
             master, 
+            width=320,
+            height=145,
             fg_color="#1E1E1E", 
             border_width=1, 
             border_color="#1f538d", # Приятный синий акцентный бордюр
             corner_radius=12,
-            height=145,
             **kwargs
         )
         self.on_close_callback = on_close_callback
@@ -107,18 +109,15 @@ class NotifierApp(customtkinter.CTk):
     
     def __init__(self):
         super().__init__()
+        log_debug("main.py: Инициализация NotifierApp...")
         
         # 1. Настройки CustomTkinter
         customtkinter.set_appearance_mode("Dark")
         customtkinter.set_default_color_theme("blue")
         
-        # 2. Делаем окно полностью безрамочным и поверх всех окон
-        self.overrideredirect(True)
-        self.wm_attributes("-topmost", True)
-        
-        # Прозрачный или темный фон подложки
-        self.configure(fg_color="black")
-        self.attributes("-alpha", 0.95) # Легкая общая прозрачность стека
+        # Скрываем стандартное оформление окна, но не применяем overrideredirect до deiconify,
+        # чтобы избежать багов инициализации Tkinter на Windows.
+        self.withdraw()
         
         # Размеры окна
         self.card_width = 320
@@ -128,9 +127,6 @@ class NotifierApp(customtkinter.CTk):
         self.margin_y = 65  # Безопасный отступ от нижнего края (над панелью задач)
         
         self.cards = []
-        
-        # Прячем окно изначально
-        self.withdraw()
         
         # 3. Инициализация очереди событий
         self.event_queue = queue.Queue()
@@ -148,6 +144,7 @@ class NotifierApp(customtkinter.CTk):
         
         # 6. Запуск периодической проверки очереди событий
         self.after(100, self._poll_events)
+        log_debug("main.py: Инициализация NotifierApp завершена успешно")
         
     def _create_tray_image(self):
         """Создает красивое изображение для иконки трея (синий радар/пульс)."""
@@ -178,18 +175,22 @@ class NotifierApp(customtkinter.CTk):
 
     def _init_tray(self):
         """Запускает системный трей в отдельном потоке."""
+        log_debug("main.py: Запуск фонового трея...")
         def tray_worker():
-            image = self._create_tray_image()
-            menu = pystray.Menu(
-                pystray.MenuItem('Выход', self.on_exit)
-            )
-            self.tray_icon = pystray.Icon(
-                "TeragisNotifier", 
-                image, 
-                "Teragis Notifier: Поиск сервера...", 
-                menu
-            )
-            self.tray_icon.run()
+            try:
+                image = self._create_tray_image()
+                menu = pystray.Menu(
+                    pystray.MenuItem('Выход', self.on_exit)
+                )
+                self.tray_icon = pystray.Icon(
+                    "TeragisNotifier", 
+                    image, 
+                    "Teragis Notifier: Поиск сервера...", 
+                    menu
+                )
+                self.tray_icon.run()
+            except Exception as tray_err:
+                log_debug(f"main.py: Ошибка в потоке трея: {tray_err}")
             
         threading.Thread(target=tray_worker, daemon=True).start()
 
@@ -200,61 +201,91 @@ class NotifierApp(customtkinter.CTk):
 
     def add_notification(self, fio, details):
         """Добавляет новое уведомление сверху стека."""
-        # 1. Если карточек уже 5, принудительно удаляем самую старую (первую в списке, т.е. нижнюю)
-        if len(self.cards) >= 5:
-            oldest_card = self.cards[-1]
-            oldest_card.close()
+        log_debug(f"main.py: Добавление уведомления для {fio}...")
+        try:
+            # 1. Если карточек уже 5, принудительно удаляем самую старую (первую в списке, т.е. нижнюю)
+            if len(self.cards) >= 5:
+                oldest_card = self.cards[-1]
+                log_debug(f"main.py: Превышен лимит карточек, удаляем самую старую ({oldest_card.fio_label.cget('text')})")
+                oldest_card.close()
+                
+            # 2. Создаем новую карточку
+            card = NotificationCard(
+                self, 
+                fio=fio, 
+                details=details, 
+                on_close_callback=self._remove_card
+            )
             
-        # 2. Создаем новую карточку
-        card = NotificationCard(
-            self, 
-            fio=fio, 
-            details=details, 
-            on_close_callback=self._remove_card
-        )
-        
-        # Добавляем в начало нашего списка
-        self.cards.insert(0, card)
-        
-        # 3. Перерисовываем стек
-        self._repack_cards()
+            # Добавляем в начало нашего списка
+            self.cards.insert(0, card)
+            log_debug("main.py: Карточка создана и добавлена в список")
+            
+            # 3. Перерисовываем стек
+            self._repack_cards()
+        except Exception as e:
+            log_debug(f"main.py: Ошибка в add_notification: {e}")
 
     def _remove_card(self, card):
         """Удаляет карточку из стека и перерисовывает окно."""
-        if card in self.cards:
-            self.cards.remove(card)
-            card.destroy()
-            self._repack_cards()
+        log_debug("main.py: Удаление карточки...")
+        try:
+            if card in self.cards:
+                self.cards.remove(card)
+                card.destroy()
+                self._repack_cards()
+        except Exception as e:
+            log_debug(f"main.py: Ошибка в _remove_card: {e}")
 
     def _repack_cards(self):
         """Перераспределяет карточки сверху вниз и меняет геометрию окна."""
-        # Сначала убираем упаковку всех карточек
-        for c in self.winfo_children():
-            c.pack_forget()
+        log_debug(f"main.py: Перепаковка карточек. Всего активных карточек: {len(self.cards)}")
+        try:
+            # Сначала убираем упаковку всех карточек
+            for c in self.winfo_children():
+                c.pack_forget()
+                
+            if not self.cards:
+                log_debug("main.py: Нет активных карточек, скрываем окно (withdraw)")
+                self.withdraw()
+                return
+                
+            # Упаковываем карточки (новые сверху)
+            for i, card in enumerate(self.cards):
+                card.pack(fill="x", pady=(0, self.spacing if i < len(self.cards)-1 else 0))
+                
+            # Рассчитываем новую высоту
+            num_cards = len(self.cards)
+            total_height = (num_cards * self.card_height) + ((num_cards - 1) * self.spacing)
             
-        if not self.cards:
-            self.withdraw()
-            return
+            # Позиционируем окно в правом нижнем углу
+            screen_width = self.winfo_screenwidth()
+            screen_height = self.winfo_screenheight()
             
-        # Упаковываем карточки (новые сверху)
-        for i, card in enumerate(self.cards):
-            card.pack(fill="x", pady=(0, self.spacing if i < len(self.cards)-1 else 0))
+            x = screen_width - self.card_width - self.margin_x
+            y = screen_height - total_height - self.margin_y
             
-        # Рассчитываем новую высоту
-        num_cards = len(self.cards)
-        total_height = (num_cards * self.card_height) + ((num_cards - 1) * self.spacing)
-        
-        # Позиционируем окно в правом нижнем углу
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        
-        x = screen_width - self.card_width - self.margin_x
-        y = screen_height - total_height - self.margin_y
-        
-        self.geometry(f"{self.card_width}x{total_height}+{x}+{y}")
-        self.deiconify()
-        self.lift()
-        self.wm_attributes("-topmost", True)
+            log_debug(f"main.py: Рассчитанная геометрия окна: {self.card_width}x{total_height}+{x}+{y}")
+            
+            # ВАЖНО для Windows: Сначала скрываем рамку
+            self.overrideredirect(True)
+            # Устанавливаем поверх всех окон
+            self.wm_attributes("-topmost", True)
+            # Легкая прозрачность
+            self.attributes("-alpha", 0.95)
+            
+            # Задаем геометрию
+            self.geometry(f"{self.card_width}x{total_height}+{x}+{y}")
+            
+            # Принудительно обновляем и выводим на экран
+            self.deiconify()
+            self.update()
+            self.lift()
+            self.wm_attributes("-topmost", True)
+            log_debug("main.py: Окно успешно отображено на экране (deiconify, update, lift)")
+            
+        except Exception as e:
+            log_debug(f"main.py: Ошибка в _repack_cards: {e}")
 
     def _poll_events(self):
         """Проверяет потокобезопасную очередь событий и выводит новые уведомления."""
@@ -263,6 +294,7 @@ class NotifierApp(customtkinter.CTk):
                 event = self.event_queue.get_nowait()
                 fio = event.get('fio')
                 details = event.get('details')
+                log_debug(f"main.py: Извлечено событие из очереди для FIO={fio}")
                 
                 # Подаем сигнал окну уведомлений
                 self.add_notification(fio, details)
@@ -276,6 +308,8 @@ class NotifierApp(customtkinter.CTk):
                 self.event_queue.task_done()
         except queue.Empty:
             pass
+        except Exception as e:
+            log_debug(f"main.py: Ошибка при обработке очереди событий: {e}")
             
         # Планируем следующую проверку через 100 мс
         self.after(100, self._poll_events)
@@ -283,17 +317,27 @@ class NotifierApp(customtkinter.CTk):
     def on_exit(self, icon=None, item=None):
         """Корректное завершение работы программы."""
         logger.info("[NotifierApp]: Завершение работы...")
+        log_debug("main.py: Завершение работы приложения...")
         
         # Останавливаем поток БД
         if hasattr(self, 'db_listener'):
-            self.db_listener.stop()
+            try:
+                self.db_listener.stop()
+            except Exception:
+                pass
             
         # Останавливаем трей
         if self.tray_icon:
-            self.tray_icon.stop()
+            try:
+                self.tray_icon.stop()
+            except Exception:
+                pass
             
         # Уничтожаем окна Tkinter
-        self.after(0, self.destroy)
+        try:
+            self.after(0, self.destroy)
+        except Exception:
+            pass
 
 if __name__ == '__main__':
     # В Linux Tkinter требует правильную локаль
@@ -303,5 +347,9 @@ if __name__ == '__main__':
     except Exception:
         pass
         
-    app = NotifierApp()
-    app.mainloop()
+    log_debug("main.py: Точка входа в приложение (main)")
+    try:
+        app = NotifierApp()
+        app.mainloop()
+    except Exception as run_err:
+        log_debug(f"main.py: Критический сбой при запуске приложения: {run_err}")
