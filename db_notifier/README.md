@@ -70,7 +70,7 @@ DB_PORT=5432            # Порт
 2. Установит `pyinstaller`, если он не установлен.
 3. Скачает зависимости из `requirements.txt`.
 4. Запустит сборку в один `.exe` файл без консоли.
-5. Готовый файл сохранится в папке `db_notifier/dist/TeragisNotifier.exe`.
+5. Готовый файл сохранится в общей корневой папке проекта: `dist/TeragisNotifier.exe`.
 
 ### 🐧 Сборка для Linux (Xubuntu):
 1. Установите PyInstaller:
@@ -78,15 +78,15 @@ DB_PORT=5432            # Порт
    pip3 install pyinstaller
    ```
 
-2. Соберите бинарный файл:
+2. Соберите бинарный файл (с указанием путей к общей корневой папке `dist` и `build`):
    ```bash
-   pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean main.py
+   pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean --paths=".." --hidden-import="identification" --distpath="../dist" --workpath="../build" main.py
    ```
 
-3. Исполняемый файл появится в папке `dist`. Перенесите его на любую станцию Xubuntu, дайте права на выполнение и запустите!
+3. Исполняемый файл появится в корневой папке `dist/`. Перенесите его на любую станцию Xubuntu, дайте права на выполнение и запустите!
    ```bash
-   chmod +x dist/TeragisNotifier
-   ./dist/TeragisNotifier
+   chmod +x ../dist/TeragisNotifier
+   ../dist/TeragisNotifier
    ```
 
 ---

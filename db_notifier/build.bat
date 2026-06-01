@@ -33,14 +33,14 @@ echo.
 :: Run PyInstaller
 echo [3/3] Building application with PyInstaller...
 echo This might take a minute...
-pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean --paths=".." --hidden-import="identification" main.py
+pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean --paths=".." --hidden-import="identification" --distpath="..\dist" --workpath="..\build" main.py
 
 if %errorlevel% equ 0 (
     echo.
     echo ====================================================
     echo [SUCCESS] Build completed successfully!
     echo Executable is located at:
-    echo %CD%\dist\TeragisNotifier.exe
+    echo %CD%\..\dist\TeragisNotifier.exe
     echo ====================================================
 ) else (
     echo.
