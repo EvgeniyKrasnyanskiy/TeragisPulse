@@ -1,9 +1,9 @@
-# -*- coding: utf-8 -*-
 import os
 import socket
 import sys
 import json
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
 import psycopg2
 from dotenv import load_dotenv
@@ -18,12 +18,28 @@ def get_real_work_dir():
 
 work_dir = get_real_work_dir()
 
+def log_debug(msg):
+    """Записывает отладочные сообщения в файл notifier_debug.txt рядом с .exe"""
+    try:
+        debug_path = os.path.join(work_dir, "notifier_debug.txt")
+        with open(debug_path, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {msg}\n")
+    except Exception:
+        pass
+
 # Каскадная загрузка .env из папки запуска, папки скрипта или родительских каталогов
-load_dotenv(os.path.join(work_dir, '.env'))
-load_dotenv(os.path.join(os.path.dirname(work_dir), '.env'))
+env_path1 = os.path.join(work_dir, '.env')
+env_path2 = os.path.join(os.path.dirname(work_dir), '.env')
+log_debug(f"Поиск .env по путям:\n  1: {env_path1} (найден: {os.path.exists(env_path1)})\n  2: {env_path2} (найден: {os.path.exists(env_path2)})")
+
+load_dotenv(env_path1)
+load_dotenv(env_path2)
+
 # Если скрипт лежит в подпапке db_notifier, корень будет на 2 уровня выше
 if not getattr(sys, 'frozen', False):
-    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(work_dir)), '.env'))
+    env_path3 = os.path.join(os.path.dirname(os.path.dirname(work_dir)), '.env')
+    log_debug(f"  3: {env_path3} (найден: {os.path.exists(env_path3)})")
+    load_dotenv(env_path3)
 
 # Дефолтные реквизиты БД
 DEFAULT_DB_NAME = os.getenv('DB_NAME', 'veri')
@@ -64,7 +80,7 @@ def set_cached_host(host):
         pass
 
 def test_pg_connection(host, creds):
-    """Проверяет реальное подключение к PostgreSQL."""
+    """Проверяет реальное подключение к PostgreSQL с подробным логированием ошибок."""
     try:
         conn = psycopg2.connect(
             host=host,
@@ -75,8 +91,10 @@ def test_pg_connection(host, creds):
             connect_timeout=2
         )
         conn.close()
+        log_debug(f"Успешное подключение к {host}!")
         return True
-    except Exception:
+    except Exception as e:
+        log_debug(f"Не удалось подключиться к {host}. Ошибка: {e}")
         return False
 
 async def scan_port(ip, port, timeout=0.5):
@@ -130,35 +148,52 @@ def discover_db_host():
     Основной метод автоопределения хоста базы данных.
     Каскад: Кэш -> Локальный -> Прописанный в .env -> Сканирование сети
     """
+    log_debug("--- Запуск автоопределения сервера БД ---")
     creds = get_db_credentials()
+    log_debug(f"Используемые реквизиты авторизации: dbname={creds['dbname']}, user={creds['user']}, port={creds['port']}")
     
     # 1. Проверяем кэш
     cached = get_cached_host()
-    if cached and test_pg_connection(cached, creds):
-        return cached
+    log_debug(f"1. Проверка кэшированного хоста: {cached}")
+    if cached:
+        if test_pg_connection(cached, creds):
+            log_debug(f"-> Кэш {cached} рабочий. Возвращаем его.")
+            return cached
+        else:
+            log_debug(f"-> Кэш {cached} не отвечает.")
 
     # 2. Проверяем localhost
+    log_debug("2. Проверка подключения к localhost (127.0.0.1)...")
     if test_pg_connection('127.0.0.1', creds):
+        log_debug("-> Локальный хост рабочий!")
         set_cached_host('127.0.0.1')
         return '127.0.0.1'
 
-    # 3. Проверяем хост, прописанный в .env (если он отличен от локального)
+    # 3. Проверяем хост, прописанный в .env
     env_host = os.getenv('DB_HOST')
+    log_debug(f"3. Проверка хоста из настроек (DB_HOST): {env_host}")
     if env_host and env_host not in ('127.0.0.1', 'localhost'):
         if test_pg_connection(env_host, creds):
+            log_debug(f"-> Хост {env_host} из .env успешно подключен!")
             set_cached_host(env_host)
             return env_host
+        else:
+            log_debug(f"-> Хост {env_host} из .env НЕ отвечает.")
 
     # 4. Сканируем локальную сеть
     local_ip = get_local_ip()
+    log_debug(f"4. Проверка сканирования сети. Локальный IP: {local_ip}")
     if local_ip == '127.0.0.1':
+        log_debug("-> Локальный IP 127.0.0.1, сканирование отменено.")
         return None # Мы не в сети
 
     parts = local_ip.split('.')
     if len(parts) != 4:
+        log_debug(f"-> Некорректный локальный IP {local_ip}, сканирование отменено.")
         return None
         
     subnet_prefix = f"{parts[0]}.{parts[1]}.{parts[2]}."
+    log_debug(f"-> Запускаем асинхронное сканирование подсети: {subnet_prefix}0/24...")
     
     # Запуск асинхронного сканера
     try:
