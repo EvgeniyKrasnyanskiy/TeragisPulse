@@ -26,11 +26,10 @@ class NotificationCard(customtkinter.CTkFrame):
     """Виджет отдельной карточки уведомления."""
     
     def __init__(self, master, fio, details, on_close_callback, **kwargs):
-        # Очень темный фон для карточки, скругленные углы
+        # Очень темный фон для карточки, скругленные углы.
+        # Не передаем width/height в super().__init__, чтобы избежать багов масштабирования float DPI в Tkinter.
         super().__init__(
             master, 
-            width=320,
-            height=145,
             fg_color="#1E1E1E", 
             border_width=1, 
             border_color="#1f538d", # Приятный синий акцентный бордюр
@@ -38,6 +37,9 @@ class NotificationCard(customtkinter.CTkFrame):
             **kwargs
         )
         self.on_close_callback = on_close_callback
+        
+        # Задаем размеры через configure (он безопасно приводит к целым числам на системном уровне)
+        self.configure(width=320, height=145)
         
         # Запрещаем виджетам сжимать фрейм
         self.pack_propagate(False)
@@ -119,7 +121,7 @@ class NotifierApp(customtkinter.CTk):
         # чтобы избежать багов инициализации Tkinter на Windows.
         self.withdraw()
         
-        # Размеры окна
+        # Размеры окна (строго целые числа)
         self.card_width = 320
         self.card_height = 145
         self.spacing = 10
@@ -131,7 +133,7 @@ class NotifierApp(customtkinter.CTk):
         # 3. Инициализация очереди событий
         self.event_queue = queue.Queue()
         
-        # 4. Запуск фонового трея
+        # 4. Запуск фоного трея
         self.tray_icon = None
         self._init_tray()
         
@@ -254,16 +256,16 @@ class NotifierApp(customtkinter.CTk):
             for i, card in enumerate(self.cards):
                 card.pack(fill="x", pady=(0, self.spacing if i < len(self.cards)-1 else 0))
                 
-            # Рассчитываем новую высоту
-            num_cards = len(self.cards)
-            total_height = (num_cards * self.card_height) + ((num_cards - 1) * self.spacing)
+            # Рассчитываем новую высоту (строго целое)
+            num_cards = int(len(self.cards))
+            total_height = int((num_cards * self.card_height) + ((num_cards - 1) * self.spacing))
             
             # Позиционируем окно в правом нижнем углу
-            screen_width = self.winfo_screenwidth()
-            screen_height = self.winfo_screenheight()
+            screen_width = int(self.winfo_screenwidth())
+            screen_height = int(self.winfo_screenheight())
             
-            x = screen_width - self.card_width - self.margin_x
-            y = screen_height - total_height - self.margin_y
+            x = int(screen_width - self.card_width - self.margin_x)
+            y = int(screen_height - total_height - self.margin_y)
             
             log_debug(f"main.py: Рассчитанная геометрия окна: {self.card_width}x{total_height}+{x}+{y}")
             
