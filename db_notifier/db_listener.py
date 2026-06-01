@@ -1,35 +1,26 @@
-# -*- coding: utf-8 -*-
 import json
 import time
 import select
+import sys
+import os
 import threading
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 import logging
 
+# Добавляем родительскую директорию в sys.path для импорта модулей из основного проекта
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
 from auto_discovery import discover_db_host, get_db_credentials
+from identification import identification_func
 
 logger = logging.getLogger(__name__)
 
-def format_fio_short(surname, forename):
-    """Превращает Фамилию и Имя/Отчество в формат 'Иванов И.И.'"""
-    surname = str(surname).strip().upper()
-    forename = str(forename).strip()
-    
-    if not surname:
-        return "Неизвестный Пациент"
-        
-    parts = forename.split()
-    initials = ""
-    if len(parts) >= 1 and parts[0]:
-        initials += f" {parts[0][0].upper()}."
-    if len(parts) >= 2 and parts[1]:
-        initials += f"{parts[1][0].upper()}."
-        
-    return f"{surname}{initials}"
-
 class DBListener(threading.Thread):
-    """Фоновый поток для отслеживания смены статуса пациентов на 'Идет лечение' (статус 3)."""
+    """Фоновый поток для прослушивания событий базы данных PostgreSQL."""
     
     def __init__(self, event_queue, on_status_change=None):
         super().__init__()
@@ -38,24 +29,14 @@ class DBListener(threading.Thread):
         self.on_status_change = on_status_change  # Callback для изменения статуса соединения (bool, str)
         self._stop_event = threading.Event()
         self._creds = get_db_credentials()
-        self.STATUS_ON_TREATMENT = 3
         
     def stop(self):
         """Останавливает поток прослушивания."""
         self._stop_event.set()
 
     def run(self):
-        logger.info("[DBListener]: Запуск фонового мониторинга статусов СУБД...")
+        logger.info("[DBListener]: Запуск фонового прослушивания БД...")
         reconnect_delay = 5
-        
-        query_active = """
-        SELECT tp.surname, tp.forename, ts.name, tp.patient_id, tc.calendar_id, ts.note
-        FROM tcalendar tc
-        INNER JOIN tseries ts ON tc.series_id = ts.series_id
-        INNER JOIN tpatient tp ON ts.patient_id = tp.patient_id
-        WHERE tc.visitdate::date = CURRENT_DATE 
-          AND tc.calendar_status_id = %s;
-        """
         
         while not self._stop_event.is_set():
             if self.on_status_change:
@@ -76,67 +57,41 @@ class DBListener(threading.Thread):
             if self.on_status_change:
                 self.on_status_change(False, "Подключение...")
 
-            # 2. Подключение к БД и первоначальная загрузка
+            # 2. Подключение к БД
             try:
                 conn = psycopg2.connect(
                     host=host,
                     dbname=self._creds['dbname'],
                     user=self._creds['user'],
                     password=self._creds['password'],
-                    port=self._creds['port'],
-                    connect_timeout=3
+                    port=self._creds['port']
                 )
-                conn.autocommit = True
+                conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 cursor = conn.cursor()
                 
-                logger.info(f"[DBListener]: Успешно подключено к СУБД {host} для отслеживания смены статусов.")
+                # Подписываемся на канал изменений
+                cursor.execute("LISTEN series_changes")
+                logger.info(f"[DBListener]: Успешно подключено к СУБД {host}. Слушаем канал series_changes...")
+                
                 if self.on_status_change:
                     self.on_status_change(True, f"Подключено ({host})")
 
-                # Множество для отслеживания уже известных сессий лечения за сегодня
-                known_calendar_ids = set()
-                
-                # Первоначальный сбор уже активных на сегодня пациентов, чтобы не спамить ими при запуске
-                try:
-                    cursor.execute(query_active, (self.STATUS_ON_TREATMENT,))
-                    rows = cursor.fetchall()
-                    for r in rows:
-                        known_calendar_ids.add(r[4]) # Добавляем calendar_id в известные
-                    logger.info(f"[DBListener]: Инициализация завершена. Известных записей на сегодня: {len(known_calendar_ids)}")
-                except Exception as init_err:
-                    logger.error(f"[DBListener]: Ошибка инициализации списка активных: {init_err}")
-
-                # 3. Цикл периодического опроса
+                # 3. Цикл ожидания событий
                 while not self._stop_event.is_set():
-                    try:
-                        cursor.execute(query_active, (self.STATUS_ON_TREATMENT,))
-                        rows = cursor.fetchall()
+                    # Проверяем, есть ли данные в сокете (таймаут 1 секунда)
+                    if select.select([conn], [], [], 1.0) == ([], [], []):
+                        continue
                         
-                        for row in rows:
-                            surname, forename, series_name, patient_id, calendar_id, note = row
-                            
-                            # Если обнаружили новый сеанс лечения, которого не было в известных
-                            if calendar_id not in known_calendar_ids:
-                                known_calendar_ids.add(calendar_id)
-                                
-                                fio = format_fio_short(surname, forename)
-                                current_time = time.strftime('%H:%M')
-                                
-                                event = {
-                                    "fio": fio,
-                                    "start_date": f"Сегодня в {current_time}"
-                                }
-                                logger.info(f"[DBListener]: Пациент пошел на лечение: {fio} в {current_time}")
-                                # Отправляем событие в очередь GUI
-                                self.event_queue.put(event)
-                                
-                    except (psycopg2.OperationalError, psycopg2.InterfaceError) as query_err:
-                        logger.error(f"[DBListener]: Сбой соединения во время запроса: {query_err}")
-                        break  # Выходим во внешний цикл для реконнекта
-                        
-                    # Опрос каждые 3 секунды (оптимально для real-time и без нагрузки на СУБД)
-                    time.sleep(3.0)
+                    conn.poll()
                     
+                    while conn.notifies:
+                        notify = conn.notifies.pop(0)
+                        try:
+                            notif_data = json.loads(notify.payload)
+                            self._process_notification(cursor, notif_data)
+                        except Exception as parse_err:
+                            logger.error(f"[DBListener]: Ошибка парсинга события: {parse_err}")
+                            
             except Exception as conn_err:
                 logger.error(f"[DBListener]: Ошибка соединения с БД: {conn_err}. Реконнект через {reconnect_delay}с.")
                 if self.on_status_change:
@@ -151,12 +106,23 @@ class DBListener(threading.Thread):
         surname = data.get('surname', '')
         forename = data.get('forename', '')
         series_id = data.get('series_id')
+        note = data.get('note', '')
+        totaldose = data.get('totaldose', 0)
+        fractionsnumber = data.get('fractionsnumber', 1)
         
-        fio = format_fio_short(surname, forename)
+        # Получаем данные о докторе, физике и укладке с помощью вашей оригинальной функции
+        try:
+            doc, phys, lay, office = identification_func(note)
+        except Exception:
+            doc, phys, lay, office = '🧑‍⚕ —', '☢ —', '—', '0'
+
+        # Сборка подробной информации
+        total_d = float(totaldose or 0)
+        frac_n = int(fractionsnumber or 1)
+        dose_step = round((total_d / frac_n), 2)
         
-        start_date_str = "dd.mm"
-        
-        # Делаем запрос к tcalendar для получения даты первого визита (старта лечения)
+        # Получаем дату первого визита из tcalendar для "лечение с dd.mm.yyyy"
+        start_date_str = None
         if series_id:
             try:
                 cursor.execute(
@@ -165,20 +131,42 @@ class DBListener(threading.Thread):
                 )
                 res = cursor.fetchone()
                 if res and res[0]:
-                    visitdate = res[0] # Это объект datetime.date
-                    start_date_str = visitdate.strftime('%d.%m')
+                    visitdate = res[0]
+                    start_date_str = visitdate.strftime('%d.%m.%Y')
             except Exception as db_err:
-                logger.error(f"[DBListener]: Ошибка запроса даты старта для series_id={series_id}: {db_err}")
+                logger.error(f"[DBListener]: Ошибка запроса даты старта: {db_err}")
                 
-        # Если дата старта так и не найдена, ставим сегодняшнюю
-        if start_date_str == "dd.mm":
-            start_date_str = time.strftime('%d.%m')
+        if not start_date_str:
+            start_date_str = time.strftime('%d.%m.%Y')
+            
+        fio = f"{surname} {forename}".strip().upper()
+        if not fio:
+            fio = "НЕИЗВЕСТНЫЙ ПАЦИЕНТ"
+            
+        # Формируем строку деталей в точности как в Telegram-боте
+        # 📊 2.67Гр x 15фр = 40.05Гр
+        # 🧑⚕ Медведев
+        # ☢️ Скворцова
+        # 📝 Без млк лечение с 02.06.2026
+        details_list = [
+            f"📊 {dose_step}Гр x {frac_n}фр = {total_d}Гр",
+            f"{doc}",
+            f"{phys}"
+        ]
+        
+        if lay and lay != '—':
+            details_list.append(f"📝 {lay} лечение с {start_date_str}")
+        else:
+            details_list.append(f"📝 лечение с {start_date_str}")
+            
+        details = "\n".join(details_list)
 
         event = {
             "fio": fio,
-            "start_date": start_date_str
+            "details": details
         }
         
-        logger.info(f"[DBListener]: Обнаружен пациент: {fio}, старт: {start_date_str}")
-        # Помещаем событие в потокобезопасную очередь
+        logger.info(f"[DBListener]: Успешно сформировано событие для {fio}")
         self.event_queue.put(event)
+
+
