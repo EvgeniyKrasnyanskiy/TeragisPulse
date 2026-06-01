@@ -89,7 +89,7 @@ class NotificationCard(tk.Frame):
 
         # Заголовок
         tk.Label(
-            content, text="Пациент на лечении!",
+            content, text="Новый план добавлен в календарь!",
             bg=BG_CARD, fg=ACCENT_BLUE,
             font=(UI_FONT, 9, "bold"), anchor="w"
         ).pack(fill="x")
