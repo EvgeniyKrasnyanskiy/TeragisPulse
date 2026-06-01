@@ -196,13 +196,19 @@ class NotifierApp:
         def tray_worker():
             try:
                 image = self._create_tray_image()
+                is_linux = platform.system() == "Linux"
+                
+                menu_history_text = "Today's History" if is_linux else 'История за сегодня'
+                menu_exit_text = 'Exit' if is_linux else 'Выход'
+                title_text = "Teragis Notifier: Searching..." if is_linux else "Teragis Notifier: Поиск сервера..."
+                
                 menu = pystray.Menu(
-                    pystray.MenuItem('История за сегодня', self._show_history_from_tray),
-                    pystray.MenuItem('Выход', self.on_exit)
+                    pystray.MenuItem(menu_history_text, self._show_history_from_tray),
+                    pystray.MenuItem(menu_exit_text, self.on_exit)
                 )
                 self.tray_icon = pystray.Icon(
                     "TeragisNotifier", image,
-                    "Teragis Notifier: Поиск сервера...", menu
+                    title_text, menu
                 )
                 self.tray_icon.run()
             except Exception as err:
@@ -213,6 +219,17 @@ class NotifierApp:
     def _on_db_status_changed(self, is_connected: bool, status_msg: str):
         """Обновляет подсказку иконки трея."""
         if self.tray_icon:
+            if platform.system() == "Linux":
+                translations = {
+                    "Поиск сервера...": "Searching...",
+                    "Сервер не найден": "Server not found",
+                    "Подключение...": "Connecting...",
+                    "Сбой связи": "Connection failed"
+                }
+                if status_msg.startswith("Подключено"):
+                    status_msg = status_msg.replace("Подключено", "Connected")
+                else:
+                    status_msg = translations.get(status_msg, status_msg)
             self.tray_icon.title = f"Teragis Notifier: {status_msg}"
 
     # --- Карточки уведомлений ---

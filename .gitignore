@@ -19,4 +19,14 @@ schema_VERI.sql
 # PyInstaller build artifacts
 build/
 dist/
+build_linux/
+dist_linux/
+build_windows/
+dist_windows/
+db_notifier/build/
+db_notifier/dist/
+db_notifier/build_linux/
+db_notifier/dist_linux/
+db_notifier/build_windows/
+db_notifier/dist_windows/
 *.spec
