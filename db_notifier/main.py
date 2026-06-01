@@ -14,6 +14,12 @@ from tkinter import font as tkfont
 import pystray
 from PIL import Image, ImageDraw
 
+try:
+    import winsound
+except ImportError:
+    winsound = None
+
+
 # Настройка логирования до импорта db_listener
 import logging
 logging.basicConfig(
@@ -268,9 +274,19 @@ class NotifierApp:
                 log_debug(f"main.py: Извлечено событие из очереди для FIO={fio}")
                 self.add_notification(fio, details)
                 try:
-                    self.root.bell()
+                    if winsound:
+                        # Воспроизводим короткий звуковой сигнал в фоновом потоке, чтобы не блокировать GUI-поток
+                        threading.Thread(
+                            target=lambda: winsound.Beep(2000, 150),
+                            daemon=True
+                        ).start()
+                    else:
+                        self.root.bell()
                 except Exception:
-                    pass
+                    try:
+                        self.root.bell()
+                    except Exception:
+                        pass
                 self.event_queue.task_done()
         except queue.Empty:
             pass
