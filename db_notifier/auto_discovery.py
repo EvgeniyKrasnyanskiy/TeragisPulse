@@ -21,20 +21,20 @@ work_dir = get_real_work_dir()
 def log_debug(msg):
     """Записывает отладочные сообщения в консоль и в файл notifier_debug.txt рядом с .exe"""
     try:
-        print(f"[DEBUG] {msg}")
+        print("[DEBUG] {}".format(msg))
     except Exception:
         pass
     try:
         debug_path = os.path.join(work_dir, "notifier_debug.txt")
         with open(debug_path, "a", encoding="utf-8") as f:
-            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {msg}\n")
+            f.write("{} - {}\n".format(time.strftime('%Y-%m-%d %H:%M:%S'), msg))
     except Exception:
         pass
 
 # Каскадная загрузка .env из папки запуска, папки скрипта или родительских каталогов
 env_path1 = os.path.join(work_dir, '.env')
 env_path2 = os.path.join(os.path.dirname(work_dir), '.env')
-log_debug(f"Поиск .env по путям:\n  1: {env_path1} (найден: {os.path.exists(env_path1)})\n  2: {env_path2} (найден: {os.path.exists(env_path2)})")
+log_debug("Поиск .env по путям:\n  1: {} (найден: {})\n  2: {} (найден: {})".format(env_path1, os.path.exists(env_path1), env_path2, os.path.exists(env_path2)))
 
 load_dotenv(env_path1)
 load_dotenv(env_path2)
@@ -42,7 +42,7 @@ load_dotenv(env_path2)
 # Если скрипт лежит в подпапке db_notifier, корень будет на 2 уровня выше
 if not getattr(sys, 'frozen', False):
     env_path3 = os.path.join(os.path.dirname(os.path.dirname(work_dir)), '.env')
-    log_debug(f"  3: {env_path3} (найден: {os.path.exists(env_path3)})")
+    log_debug("  3: {} (найден: {})".format(env_path3, os.path.exists(env_path3)))
     load_dotenv(env_path3)
 
 # Дефолтные реквизиты БД
@@ -95,10 +95,10 @@ def test_pg_connection(host, creds):
             connect_timeout=2
         )
         conn.close()
-        log_debug(f"Успешное подключение к {host}!")
+        log_debug("Успешное подключение к {}!".format(host))
         return True
     except Exception as e:
-        log_debug(f"Не удалось подключиться к {host}. Ошибка: {e}")
+        log_debug("Не удалось подключиться к {}. Ошибка: {}".format(host, e))
         return False
 
 async def scan_port(ip, port, timeout=0.5):
@@ -115,7 +115,7 @@ async def find_postgres_in_subnet(subnet_prefix, port, executor, creds):
     tasks = []
     # Сканируем хосты от 1 до 254
     for i in range(1, 255):
-        ip = f"{subnet_prefix}{i}"
+        ip = "{}{}".format(subnet_prefix, i)
         tasks.append(scan_port(ip, port))
     
     # Ждем завершения всех проверок портов
@@ -154,28 +154,28 @@ def discover_db_host():
     """
     log_debug("--- Запуск автоопределения сервера БД ---")
     creds = get_db_credentials()
-    log_debug(f"Используемые реквизиты авторизации: dbname={creds['dbname']}, user={creds['user']}, port={creds['port']}")
+    log_debug("Используемые реквизиты авторизации: dbname={}, user={}, port={}".format(creds['dbname'], creds['user'], creds['port']))
     
     # 1. Проверяем хост, прописанный в .env (наивысший приоритет)
     env_host = os.getenv('DB_HOST')
-    log_debug(f"1. Проверка хоста из настроек (DB_HOST): {env_host}")
+    log_debug("1. Проверка хоста из настроек (DB_HOST): {}".format(env_host))
     if env_host:
         if test_pg_connection(env_host, creds):
-            log_debug(f"-> Хост {env_host} из .env успешно подключен!")
+            log_debug("-> Хост {} из .env успешно подключен!".format(env_host))
             set_cached_host(env_host)
             return env_host
         else:
-            log_debug(f"-> Хост {env_host} из .env НЕ отвечает.")
+            log_debug("-> Хост {} из .env НЕ отвечает.".format(env_host))
 
     # 2. Проверяем кэш
     cached = get_cached_host()
-    log_debug(f"2. Проверка кэшированного хоста: {cached}")
+    log_debug("2. Проверка кэшированного хоста: {}".format(cached))
     if cached:
         if test_pg_connection(cached, creds):
-            log_debug(f"-> Кэш {cached} рабочий. Возвращаем его.")
+            log_debug("-> Кэш {} рабочий. Возвращаем его.".format(cached))
             return cached
         else:
-            log_debug(f"-> Кэш {cached} не отвечает.")
+            log_debug("-> Кэш {} не отвечает.".format(cached))
 
     # 3. Проверяем localhost
     log_debug("3. Проверка подключения к localhost (127.0.0.1)...")
@@ -186,18 +186,18 @@ def discover_db_host():
 
     # 4. Сканируем локальную сеть
     local_ip = get_local_ip()
-    log_debug(f"4. Проверка сканирования сети. Локальный IP: {local_ip}")
+    log_debug("4. Проверка сканирования сети. Локальный IP: {}".format(local_ip))
     if local_ip == '127.0.0.1':
         log_debug("-> Локальный IP 127.0.0.1, сканирование отменено.")
         return None # Мы не в сети
 
     parts = local_ip.split('.')
     if len(parts) != 4:
-        log_debug(f"-> Некорректный локальный IP {local_ip}, сканирование отменено.")
+        log_debug("-> Некорректный локальный IP {}, сканирование отменено.".format(local_ip))
         return None
         
-    subnet_prefix = f"{parts[0]}.{parts[1]}.{parts[2]}."
-    log_debug(f"-> Запускаем асинхронное сканирование подсети: {subnet_prefix}0/24...")
+    subnet_prefix = "{}.{}.{}.".format(parts[0], parts[1], parts[2])
+    log_debug("-> Запускаем асинхронное сканирование подсети: {}0/24...".format(subnet_prefix))
     
     # Запуск асинхронного сканера
     try:
@@ -222,6 +222,6 @@ if __name__ == '__main__':
     print("Ищем сервер базы данных...")
     host = discover_db_host()
     if host:
-        print(f"Успешно найден хост БД: {host}")
+        print("Успешно найден хост БД: {}".format(host))
     else:
         print("Не удалось автоматически обнаружить сервер базы данных.")

@@ -46,7 +46,7 @@ class DBListener(threading.Thread):
             # 1. Обнаружение сервера БД
             host = discover_db_host()
             if not host:
-                logger.error(f"[DBListener]: Сервер базы данных не найден. Повторная попытка через {reconnect_delay}с.")
+                logger.error("[DBListener]: Сервер базы данных не найден. Повторная попытка через {}с.".format(reconnect_delay))
                 if self.on_status_change:
                     self.on_status_change(False, "Сервер не найден")
                 time.sleep(reconnect_delay)
@@ -72,11 +72,11 @@ class DBListener(threading.Thread):
                 
                 # Подписываемся на канал изменений
                 cursor.execute("LISTEN series_changes")
-                logger.info(f"[DBListener]: Успешно подключено к СУБД {host}. Слушаем канал series_changes...")
-                log_debug(f"Успешный LISTEN series_changes на хосте {host}")
+                logger.info("[DBListener]: Успешно подключено к СУБД {}. Слушаем канал series_changes...".format(host))
+                log_debug("Успешный LISTEN series_changes на хосте {}".format(host))
                 
                 if self.on_status_change:
-                    self.on_status_change(True, f"Подключено ({host})")
+                    self.on_status_change(True, "Подключено ({})".format(host))
 
                 # 3. Цикл ожидания событий (надежный опрос сокета, совместимый с Windows)
                 while not self._stop_event.is_set():
@@ -86,18 +86,18 @@ class DBListener(threading.Thread):
                         notify = conn.notifies.pop(0)
                         try:
                             notif_data = json.loads(notify.payload)
-                            log_debug(f"Получено NOTIFY событие: {notif_data}")
+                            log_debug("Получено NOTIFY событие: {}".format(notif_data))
                             self._process_notification(cursor, notif_data)
                         except Exception as parse_err:
-                            logger.error(f"[DBListener]: Ошибка парсинга события: {parse_err}")
-                            log_debug(f"Ошибка обработки NOTIFY: {parse_err}")
+                            logger.error("[DBListener]: Ошибка парсинга события: {}".format(parse_err))
+                            log_debug("Ошибка обработки NOTIFY: {}".format(parse_err))
                             
                     # Пауза в 2 секунды (точно так же как в teragis_pulse.py!)
                     time.sleep(2.0)
                             
             except Exception as conn_err:
-                logger.error(f"[DBListener]: Ошибка соединения с БД: {conn_err}. Реконнект через {reconnect_delay}с.")
-                log_debug(f"Сбой соединения или LISTEN: {conn_err}")
+                logger.error("[DBListener]: Ошибка соединения с БД: {}. Реконнект через {}с.".format(conn_err, reconnect_delay))
+                log_debug("Сбой соединения или LISTEN: {}".format(conn_err))
                 if self.on_status_change:
                     self.on_status_change(False, "Сбой связи")
                 time.sleep(reconnect_delay)
@@ -118,7 +118,7 @@ class DBListener(threading.Thread):
         try:
             doc, phys, lay, office = identification_func(note)
         except Exception as ident_err:
-            log_debug(f"Ошибка парсинга персонала через identification_func: {ident_err}")
+            log_debug("Ошибка парсинга персонала через identification_func: {}".format(ident_err))
             doc, phys, lay, office = '🧑‍⚕ —', '☢ —', '—', '0'
 
         # Сборка подробной информации
@@ -139,27 +139,27 @@ class DBListener(threading.Thread):
                     visitdate = res[0]
                     start_date_str = visitdate.strftime('%d.%m.%Y')
             except Exception as db_err:
-                logger.error(f"[DBListener]: Ошибка запроса даты старта: {db_err}")
-                log_debug(f"Ошибка запроса даты из tcalendar: {db_err}")
+                logger.error("[DBListener]: Ошибка запроса даты старта: {}".format(db_err))
+                log_debug("Ошибка запроса даты из tcalendar: {}".format(db_err))
                 
         if not start_date_str:
             start_date_str = time.strftime('%d.%m.%Y')
             
-        fio = f"{surname} {forename}".strip().upper()
+        fio = "{} {}".format(surname, forename).strip().upper()
         if not fio:
             fio = "НЕИЗВЕСТНЫЙ ПАЦИЕНТ"
             
         # Формируем строку деталей в точности как в Telegram-боте
         details_list = [
-            f"📊 {dose_step}Гр x {frac_n}фр = {total_d}Гр",
-            f"{doc}",
-            f"{phys}"
+            "📊 {}Гр x {}фр = {}Гр".format(dose_step, frac_n, total_d),
+            "{}".format(doc),
+            "{}".format(phys)
         ]
         
         if lay and lay != '—':
-            details_list.append(f"📝 {lay} лечение с {start_date_str}")
+            details_list.append("📝 {} лечение с {}".format(lay, start_date_str))
         else:
-            details_list.append(f"📝 лечение с {start_date_str}")
+            details_list.append("📝 лечение с {}".format(start_date_str))
             
         details = "\n".join(details_list)
 
@@ -168,7 +168,7 @@ class DBListener(threading.Thread):
             "details": details
         }
         
-        log_debug(f"Сформировано GUI событие: FIO={fio}, Details={details_list}")
+        log_debug("Сформировано GUI событие: FIO={}, Details={}".format(fio, details_list))
         self.event_queue.put(event)
 
 

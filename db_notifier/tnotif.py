@@ -120,7 +120,7 @@ class NotificationCard(tk.Frame):
         ).pack(fill="x")
 
         # ФИО
-        display_fio = fio if is_win else f"Пациент: {fio}"
+        display_fio = fio if is_win else "Пациент: {}".format(fio)
         tk.Label(
             content, text=display_fio,
             bg=BG_CARD, fg=TEXT_WHITE,
@@ -294,14 +294,14 @@ class NotifierApp:
             sw = self.root.winfo_screenwidth()
             sh = self.root.winfo_screenheight()
         except Exception as e:
-            log_debug(f"Linux-пульт: Ошибка получения разрешения экрана, используем фолбек: {e}")
+            log_debug("Linux-пульт: Ошибка получения разрешения экрана, используем фолбек: {}".format(e))
             sw, sh = 1920, 1080
 
         x = (sw - win_w) // 2
         y = (sh - win_h) // 2
         
-        log_debug(f"Linux-пульт: Установка геометрии {win_w}x{win_h}+{x}+{y}...")
-        self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        log_debug("Linux-пульт: Установка геометрии {}x{}+{}+{}...".format(win_w, win_h, x, y))
+        self.root.geometry("{}x{}+{}+{}".format(win_w, win_h, x, y))
         self.root.resizable(False, False)
         log_debug("Linux-пульт: Инициализация успешно завершена!")
 
@@ -350,7 +350,7 @@ class NotifierApp:
                 )
                 self.tray_icon.run()
             except Exception as err:
-                log_debug(f"main.py: Ошибка в потоке трея: {err}")
+                log_debug("main.py: Ошибка в потоке трея: {}".format(err))
 
         threading.Thread(target=tray_worker, daemon=True).start()
 
@@ -362,7 +362,7 @@ class NotifierApp:
         """Обновляет подсказку иконки трея или виджеты пульта управления на Linux."""
         if is_win:
             if self.tray_icon:
-                self.tray_icon.title = f"Teragis Notifier: {status_msg}"
+                self.tray_icon.title = "Teragis Notifier: {}".format(status_msg)
         else:
             if not hasattr(self, 'status_label'):
                 return
@@ -378,7 +378,7 @@ class NotifierApp:
                 status_prefix = "[ ... ]"
             
             # Обновляем текст статуса подключения вместе с префиксом
-            self.status_label.config(text=f"{status_prefix} {status_msg}")
+            self.status_label.config(text="{} {}".format(status_prefix, status_msg))
 
     # --- Карточки уведомлений ---
 
@@ -386,12 +386,12 @@ class NotifierApp:
         """Добавляет новое уведомление сверху стека."""
         fio = clean_emojis(fio)
         details = clean_emojis(details)
-        log_debug(f"main.py: Добавление уведомления для {fio}...")
+        log_debug("main.py: Добавление уведомления для {}...".format(fio))
         try:
             # Строгий лимит ротации: не более 5 карточек одновременно
             while len(self.cards) >= 5:
                 oldest_card = self.cards[-1]
-                log_debug(f"main.py: Превышен лимит ({len(self.cards)}). Удаляем старую карточку.")
+                log_debug("main.py: Превышен лимит ({}). Удаляем старую карточку.".format(len(self.cards)))
                 oldest_card.close()
 
             # Добавляем в историю уведомлений
@@ -433,7 +433,7 @@ class NotifierApp:
             log_debug("main.py: Карточка создана и добавлена в список")
             self._repack_cards()
         except Exception as e:
-            log_debug(f"main.py: Ошибка в add_notification: {e}")
+            log_debug("main.py: Ошибка в add_notification: {}".format(e))
 
     def _safe_close_card(self, card: NotificationCard):
         """Безопасное автоматическое закрытие карточки по таймеру."""
@@ -442,7 +442,7 @@ class NotifierApp:
                 log_debug("main.py: Сработал 5-минутный таймер автозакрытия для карточки.")
                 card.close()
         except Exception as e:
-            log_debug(f"main.py: Ошибка при автозакрытии карточки: {e}")
+            log_debug("main.py: Ошибка при автозакрытии карточки: {}".format(e))
 
     def _remove_card(self, card: NotificationCard):
         """Удаляет карточку из стека."""
@@ -453,11 +453,11 @@ class NotifierApp:
                 card.destroy()
                 self._repack_cards()
         except Exception as e:
-            log_debug(f"main.py: Ошибка в _remove_card: {e}")
+            log_debug("main.py: Ошибка в _remove_card: {}".format(e))
 
     def _repack_cards(self):
         """Перестраивает стек карточек и позиционирует окно в правом нижнем углу."""
-        log_debug(f"main.py: Перепаковка карточек. Всего: {len(self.cards)}")
+        log_debug("main.py: Перепаковка карточек. Всего: {}".format(len(self.cards)))
         try:
             container = self.root if is_win else self.cards_window
 
@@ -493,14 +493,14 @@ class NotifierApp:
             x = sw - self.card_width - self.margin_x
             y = sh - total_h - self.margin_y
 
-            log_debug(f"main.py: Геометрия: {self.card_width}x{total_h}+{x}+{y}")
+            log_debug("main.py: Геометрия: {}x{}+{}+{}".format(self.card_width, total_h, x, y))
 
             if not is_win:
                 # На X11/Linux сначала нужно отобразить окно (deiconify), 
                 # и только потом применять overrideredirect(True), иначе WM скроет его навсегда.
                 container.deiconify()
                 container.overrideredirect(True)
-                container.geometry(f"{self.card_width}x{total_h}+{x}+{y}")
+                container.geometry("{}x{}+{}+{}".format(self.card_width, total_h, x, y))
                 try:
                     container.attributes("-alpha", 0.95)
                 except Exception:
@@ -512,14 +512,14 @@ class NotifierApp:
                 self.root.overrideredirect(True)
                 self.root.wm_attributes("-topmost", True)
                 self.root.attributes("-alpha", 0.95)
-                self.root.geometry(f"{self.card_width}x{total_h}+{x}+{y}")
+                self.root.geometry("{}x{}+{}+{}".format(self.card_width, total_h, x, y))
                 self.root.deiconify()
                 self.root.update_idletasks()
                 self.root.lift()
                 self.root.wm_attributes("-topmost", True)
                 log_debug("main.py: [Windows] Окно отображено")
         except Exception as e:
-            log_debug(f"main.py: Ошибка в _repack_cards: {e}")
+            log_debug("main.py: Ошибка в _repack_cards: {}".format(e))
 
     # --- История уведомлений за день ---
 
@@ -529,7 +529,7 @@ class NotifierApp:
             today = time.strftime('%Y-%m-%d')
             self.history = [item for item in self.history if item['date'] == today]
         except Exception as e:
-            log_debug(f"main.py: Ошибка при очистке старой истории: {e}")
+            log_debug("main.py: Ошибка при очистке старой истории: {}".format(e))
 
     def _show_history_from_tray(self, icon=None, item=None):
         """Метод вызывается из потока трея для открытия окна истории в потоке Tkinter."""
@@ -556,7 +556,7 @@ class NotifierApp:
             sh = history_win.winfo_screenheight()
             x = (sw - win_w) // 2
             y = (sh - win_h) // 2
-            history_win.geometry(f"{win_w}x{win_h}+{x}+{y}")
+            history_win.geometry("{}x{}+{}+{}".format(win_w, win_h, x, y))
             
             # Устанавливаем поверх остальных окон и фокусируемся
             history_win.attributes("-topmost", True)
@@ -635,7 +635,7 @@ class NotifierApp:
                     title_frame = tk.Frame(info_frame, bg=BG_CARD)
                     title_frame.pack(fill="x")
                     
-                    display_history_fio = item['fio'] if is_win else f"Пациент: {item['fio']}"
+                    display_history_fio = item['fio'] if is_win else "Пациент: {}".format(item['fio'])
                     tk.Label(
                         title_frame, text=display_history_fio,
                         bg=BG_CARD, fg=TEXT_WHITE,
@@ -668,7 +668,7 @@ class NotifierApp:
             )
             close_btn.pack()
         except Exception as e:
-            log_debug(f"main.py: Ошибка при открытии окна истории: {e}")
+            log_debug("main.py: Ошибка при открытии окна истории: {}".format(e))
 
     # --- Звуковое оповещение ---
 
@@ -728,15 +728,15 @@ class NotifierApp:
             while True:
                 try:
                     last_status = self.status_queue.get_nowait()
-                    self.status_queue.task_done()
                 except queue.Empty:
                     break
             
             if last_status is not None:
                 is_connected, status_msg = last_status
                 self._update_status_ui(is_connected, status_msg)
+                self.status_queue.task_done()
         except Exception as e:
-            log_debug(f"main.py: Ошибка при обработке очереди статусов: {e}")
+            log_debug("main.py: Ошибка при обработке очереди статусов: {}".format(e))
 
         try:
             # Опрашиваем очередь уведомлений
@@ -744,14 +744,14 @@ class NotifierApp:
                 event = self.event_queue.get_nowait()
                 fio = event.get('fio')
                 details = event.get('details')
-                log_debug(f"main.py: Извлечено событие из очереди для FIO={fio}")
+                log_debug("main.py: Извлечено событие из очереди для FIO={}".format(fio))
                 self.add_notification(fio, details)
                 self._play_notification_sound()
                 self.event_queue.task_done()
         except queue.Empty:
             pass
         except Exception as e:
-            log_debug(f"main.py: Ошибка при обработке очереди уведомлений: {e}")
+            log_debug("main.py: Ошибка при обработке очереди уведомлений: {}".format(e))
 
         self.root.after(100, self._poll_events)
 
@@ -791,4 +791,4 @@ if __name__ == '__main__':
         app = NotifierApp()
         app.run()
     except Exception as run_err:
-        log_debug(f"main.py: Критический сбой: {run_err}")
+        log_debug("main.py: Критический сбой: {}".format(run_err))
