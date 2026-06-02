@@ -428,7 +428,7 @@ class NotifierApp:
             self.cards.insert(0, card)
             
             # Автозакрытие карточки по таймеру ровно через 5 минут (300 000 мс)
-            self.root.after(300_000, lambda c=card: self._safe_close_card(c))
+            self.root.after(300000, lambda c=card: self._safe_close_card(c))
             
             log_debug("main.py: Карточка создана и добавлена в список")
             self._repack_cards()
