@@ -14,8 +14,13 @@ import time
 import threading
 import tkinter as tk
 from tkinter import font as tkfont
-import pystray
 from PIL import Image, ImageDraw
+
+is_win = os.name == 'nt'
+if is_win:
+    import pystray
+else:
+    pystray = None
 
 try:
     import winsound
@@ -136,7 +141,6 @@ class NotifierApp:
 
         # Главное окно — стандартный tkinter.Tk (без customtkinter!)
         self.root = tk.Tk()
-        self.root.withdraw()  # Полностью скрыть до первого уведомления
         self.root.configure(bg=BG_WINDOW)
 
         # Размеры карточки и стека
@@ -152,9 +156,15 @@ class NotifierApp:
         # Хранилище истории уведомлений за текущие сутки
         self.history: list[dict] = []
 
-        # Трей
+        # Трей и управление окнами в зависимости от ОС
         self.tray_icon = None
-        self._init_tray()
+        self.cards_window = None
+
+        if is_win:
+            self.root.withdraw()  # Полностью скрыть до первого уведомления
+            self._init_tray()
+        else:
+            self._init_linux_dashboard()
 
         # Прослушивание БД
         self.db_listener = DBListener(
@@ -166,6 +176,98 @@ class NotifierApp:
         # Опрос очереди событий
         self.root.after(100, self._poll_events)
         log_debug("main.py: Инициализация NotifierApp завершена успешно")
+
+    def _init_linux_dashboard(self):
+        """Инициализация аккуратного пульта управления для Linux."""
+        log_debug("main.py: Инициализация Linux-пульта...")
+        self.root.deiconify()
+        self.root.title("Teragis Notifier")
+        self.root.resizable(False, False)
+
+        # Размеры и центрирование
+        win_w = 340
+        win_h = 220
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        x = (sw - win_w) // 2
+        y = (sh - win_h) // 2
+        self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
+
+        # Кастомный заголовок
+        title_label = tk.Label(
+            self.root,
+            text="Teragis Pulse Notifier",
+            bg=BG_WINDOW,
+            fg=TEXT_WHITE,
+            font=(UI_FONT, 14, "bold"),
+            pady=10
+        )
+        title_label.pack()
+
+        # Рамка для статуса подключения
+        status_frame = tk.Frame(
+            self.root,
+            bg=BG_CARD,
+            highlightbackground=ACCENT_BLUE,
+            highlightthickness=1,
+            bd=0
+        )
+        status_frame.pack(fill="x", padx=20, pady=5)
+
+        # Canvas для светодиода статуса
+        self.status_canvas = tk.Canvas(
+            status_frame,
+            width=16,
+            height=16,
+            bg=BG_CARD,
+            highlightthickness=0
+        )
+        self.status_canvas.pack(side="left", padx=(10, 5), pady=8)
+        self.status_led = self.status_canvas.create_ellipse(2, 2, 14, 14, fill="#777777", outline="")
+
+        # Текст статуса подключения
+        self.status_label = tk.Label(
+            status_frame,
+            text="Инициализация...",
+            bg=BG_CARD,
+            fg=TEXT_GREY,
+            font=(UI_FONT, 10),
+            anchor="w"
+        )
+        self.status_label.pack(side="left", fill="x", expand=True, pady=8)
+
+        # Кнопка истории
+        btn_history = tk.Button(
+            self.root,
+            text="🕒 История за сегодня",
+            bg=ACCENT_BLUE,
+            fg=TEXT_WHITE,
+            activebackground=HOVER_DARK,
+            activeforeground=TEXT_WHITE,
+            font=(UI_FONT, 10, "bold"),
+            bd=0,
+            cursor="hand2",
+            command=self.show_history_window
+        )
+        btn_history.pack(fill="x", padx=20, pady=(15, 5), ipady=5)
+
+        # Кнопка выхода
+        btn_exit = tk.Button(
+            self.root,
+            text="🚪 Выход",
+            bg="#444444",
+            fg=TEXT_WHITE,
+            activebackground="#666666",
+            activeforeground=TEXT_WHITE,
+            font=(UI_FONT, 10, "bold"),
+            bd=0,
+            cursor="hand2",
+            command=self.on_exit
+        )
+        btn_exit.pack(fill="x", padx=20, pady=5, ipady=5)
+
+        # Обработка закрытия окна крестиком
+        self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 
     # --- Трей ---
 
@@ -217,20 +319,32 @@ class NotifierApp:
         threading.Thread(target=tray_worker, daemon=True).start()
 
     def _on_db_status_changed(self, is_connected: bool, status_msg: str):
-        """Обновляет подсказку иконки трея."""
-        if self.tray_icon:
-            if platform.system() == "Linux":
-                translations = {
-                    "Поиск сервера...": "Searching...",
-                    "Сервер не найден": "Server not found",
-                    "Подключение...": "Connecting...",
-                    "Сбой связи": "Connection failed"
-                }
-                if status_msg.startswith("Подключено"):
-                    status_msg = status_msg.replace("Подключено", "Connected")
-                else:
-                    status_msg = translations.get(status_msg, status_msg)
-            self.tray_icon.title = f"Teragis Notifier: {status_msg}"
+        """Обновляет статус подключения потокобезопасно."""
+        self.root.after(0, lambda: self._update_status_ui(is_connected, status_msg))
+
+    def _update_status_ui(self, is_connected: bool, status_msg: str):
+        """Обновляет подсказку иконки трея или виджеты пульта управления на Linux."""
+        if is_win:
+            if self.tray_icon:
+                self.tray_icon.title = f"Teragis Notifier: {status_msg}"
+        else:
+            if not hasattr(self, 'status_label') or not hasattr(self, 'status_canvas'):
+                return
+            
+            # Обновляем текст статуса подключения
+            self.status_label.config(text=status_msg)
+
+            # Определяем цвет светодиода
+            if is_connected:
+                color = "#4CAF50"  # Зеленый
+            elif "Сбой" in status_msg or "не найден" in status_msg:
+                color = "#F44336"  # Красный
+            elif "Подключение" in status_msg or "Поиск" in status_msg:
+                color = "#FF9800"  # Оранжевый
+            else:
+                color = "#777777"  # Серый
+            
+            self.status_canvas.itemconfig(self.status_led, fill=color)
 
     # --- Карточки уведомлений ---
 
@@ -255,8 +369,23 @@ class NotifierApp:
             })
             self._clean_old_history()
 
+            # Контейнер для карточек
+            if is_win:
+                container = self.root
+            else:
+                if self.cards_window is None or not self.cards_window.winfo_exists():
+                    self.cards_window = tk.Toplevel(self.root)
+                    self.cards_window.configure(bg=BG_WINDOW)
+                    self.cards_window.overrideredirect(True)
+                    self.cards_window.wm_attributes("-topmost", True)
+                    try:
+                        self.cards_window.attributes("-alpha", 0.95)
+                    except Exception:
+                        pass
+                container = self.cards_window
+
             card = NotificationCard(
-                self.root, fio=fio, details=details,
+                container, fio=fio, details=details,
                 on_close_callback=self._remove_card,
                 width=self.card_width
             )
@@ -294,19 +423,26 @@ class NotifierApp:
         """Перестраивает стек карточек и позиционирует окно в правом нижнем углу."""
         log_debug(f"main.py: Перепаковка карточек. Всего: {len(self.cards)}")
         try:
+            container = self.root if is_win else self.cards_window
+
             # Удаляем визуальное представление всех дочерних, которые не в self.cards
-            # (на всякий случай, если кто-то остался)
-            for c in self.root.winfo_children():
-                if c not in self.cards:
-                    c.pack_forget()
+            if container and container.winfo_exists():
+                for c in container.winfo_children():
+                    if c not in self.cards:
+                        c.pack_forget()
 
             if not self.cards:
                 log_debug("main.py: Нет карточек — скрываем окно")
-                try:
-                    self.root.overrideredirect(False)
-                except Exception:
-                    pass
-                self.root.withdraw()
+                if is_win:
+                    try:
+                        self.root.overrideredirect(False)
+                    except Exception:
+                        pass
+                    self.root.withdraw()
+                else:
+                    if self.cards_window and self.cards_window.winfo_exists():
+                        self.cards_window.destroy()
+                        self.cards_window = None
                 return
 
             for i, card in enumerate(self.cards):
@@ -316,25 +452,25 @@ class NotifierApp:
             num = len(self.cards)
             total_h = num * self.card_height + (num - 1) * self.spacing
 
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
+            sw = container.winfo_screenwidth()
+            sh = container.winfo_screenheight()
             x = sw - self.card_width - self.margin_x
             y = sh - total_h - self.margin_y
 
             log_debug(f"main.py: Геометрия: {self.card_width}x{total_h}+{x}+{y}")
 
-            if platform.system() == "Linux":
+            if not is_win:
                 # На X11/Linux сначала нужно отобразить окно (deiconify), 
                 # и только потом применять overrideredirect(True), иначе WM скроет его навсегда.
-                self.root.deiconify()
-                self.root.overrideredirect(True)
-                self.root.geometry(f"{self.card_width}x{total_h}+{x}+{y}")
+                container.deiconify()
+                container.overrideredirect(True)
+                container.geometry(f"{self.card_width}x{total_h}+{x}+{y}")
                 try:
-                    self.root.attributes("-alpha", 0.95)
+                    container.attributes("-alpha", 0.95)
                 except Exception:
                     pass
-                self.root.lift()
-                self.root.update()
+                container.lift()
+                container.update()
                 log_debug("main.py: [Linux] Окно отображено через deiconify + overrideredirect(True)")
             else:
                 self.root.overrideredirect(True)
@@ -500,6 +636,10 @@ class NotifierApp:
 
     def _play_notification_sound(self) -> None:
         """Воспроизводит короткий звуковой сигнал (кроссплатформенно)."""
+        if not is_win:
+            # На Linux звук должен быть полностью отключен (тихий режим)
+            return
+
         def _sound_worker():
             try:
                 # Windows: winsound.Beep через системный спикер
