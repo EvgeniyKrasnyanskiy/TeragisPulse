@@ -191,12 +191,12 @@ class NotifierApp:
         log_debug("main.py: Инициализация NotifierApp завершена успешно")
 
     def _init_linux_dashboard(self) -> None:
-        """Инициализация аккуратного и стабильного пульта управления для Linux."""
-        log_debug("main.py: Инициализация Linux-пульта...")
+        """Сверхупрощённая и стабильная версия пульта управления для старого Xubuntu (Xfce 4.12)."""
+        log_debug("main.py: Инициализация Linux-пульта (упрощённая версия)...")
         self.root.title("Teragis Notifier")
         self.root.configure(bg=BG_WINDOW)
 
-        # Кастомный заголовок
+        # Простой заголовок
         log_debug("Linux-пульт: Создание title_label...")
         title_label = tk.Label(
             self.root,
@@ -208,46 +208,24 @@ class NotifierApp:
         )
         title_label.pack()
 
-        # Рамка для статуса подключения
+        # Статус-фрейм (без highlight-эффектов, вызывающих зависание)
         log_debug("Linux-пульт: Создание status_frame...")
-        status_frame = tk.Frame(
-            self.root,
-            bg=BG_CARD,
-            highlightbackground=ACCENT_BLUE,
-            highlightthickness=1,
-            bd=0
-        )
+        status_frame = tk.Frame(self.root, bg=BG_CARD, pady=10, padx=15)
         status_frame.pack(fill="x", padx=20, pady=8)
 
-        # Canvas для светодиода статуса (делаем максимально безопасно)
-        log_debug("Linux-пульт: Создание status_canvas...")
-        self.status_canvas = tk.Canvas(
-            status_frame,
-            width=18,
-            height=18,
-            bg=BG_CARD,
-            highlightthickness=0
-        )
-        self.status_canvas.pack(side="left", padx=(10, 5), pady=8)
-        
-        # Создаём oval строго после pack и небольшого обновления задач интерфейса
-        self.root.update_idletasks()  # Важно для старых систем
-        log_debug("Linux-пульт: Рисование status_led (oval)...")
-        self.status_led = self.status_canvas.create_oval(2, 2, 16, 16, fill="#777777", outline="")
-
-        # Текст статуса подключения
+        # Текст статуса подключения с начальным эмодзи
         log_debug("Linux-пульт: Создание status_label...")
         self.status_label = tk.Label(
             status_frame,
-            text="Инициализация...",
+            text="⚪ Инициализация...",
             bg=BG_CARD,
             fg=TEXT_GREY,
             font=(UI_FONT, 10),
-            anchor="w"
+            anchor="center"
         )
-        self.status_label.pack(side="left", fill="x", expand=True, pady=8)
+        self.status_label.pack(fill="x", expand=True)
 
-        # Кнопка истории
+        # Кнопки
         log_debug("Linux-пульт: Создание btn_history...")
         btn_history = tk.Button(
             self.root,
@@ -263,7 +241,6 @@ class NotifierApp:
         )
         btn_history.pack(fill="x", padx=20, pady=(10, 5), ipady=5)
 
-        # Кнопка выхода
         log_debug("Linux-пульт: Создание btn_exit...")
         btn_exit = tk.Button(
             self.root,
@@ -364,23 +341,21 @@ class NotifierApp:
             if self.tray_icon:
                 self.tray_icon.title = f"Teragis Notifier: {status_msg}"
         else:
-            if not hasattr(self, 'status_label') or not hasattr(self, 'status_canvas'):
+            if not hasattr(self, 'status_label'):
                 return
             
-            # Обновляем текст статуса подключения
-            self.status_label.config(text=status_msg)
-
-            # Определяем цвет светодиода
+            # Определяем эмодзи статуса
             if is_connected:
-                color = "#4CAF50"  # Зеленый
+                emoji = "🟢"
             elif "Сбой" in status_msg or "не найден" in status_msg:
-                color = "#F44336"  # Красный
+                emoji = "🔴"
             elif "Подключение" in status_msg or "Поиск" in status_msg:
-                color = "#FF9800"  # Оранжевый
+                emoji = "🟡"
             else:
-                color = "#777777"  # Серый
+                emoji = "⚪"
             
-            self.status_canvas.itemconfig(self.status_led, fill=color)
+            # Обновляем текст статуса подключения вместе с эмодзи
+            self.status_label.config(text=f"{emoji} {status_msg}")
 
     # --- Карточки уведомлений ---
 
