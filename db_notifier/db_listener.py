@@ -157,9 +157,8 @@ class DBListener(threading.Thread):
         ]
         
         if lay and lay != '—':
-            details_list.append("📝 {} лечение с {}".format(lay, start_date_str))
-        else:
-            details_list.append("📝 лечение с {}".format(start_date_str))
+            details_list.append("📝 {}".format(lay))
+        details_list.append("📅 Пациент лечится с: {}".format(start_date_str))
             
         details = "\n".join(details_list)
 
