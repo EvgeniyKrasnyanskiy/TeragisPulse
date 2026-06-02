@@ -18,6 +18,14 @@ def get_real_work_dir():
 
 work_dir = get_real_work_dir()
 
+# Ограничение размера лога: удаляем его, если он больше 1 МБ
+try:
+    _debug_file = os.path.join(work_dir, "notifier_debug.txt")
+    if os.path.exists(_debug_file) and os.path.getsize(_debug_file) > 1024 * 1024:
+        os.remove(_debug_file)
+except Exception:
+    pass
+
 def log_debug(msg):
     """Записывает отладочные сообщения в консоль и в файл notifier_debug.txt рядом с .exe"""
     try:
