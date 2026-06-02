@@ -231,7 +231,7 @@ class NotifierApp:
 
         # Статус-фрейм (без highlight-эффектов, вызывающих зависание)
         log_debug("Linux-пульт: Создание status_frame...")
-        status_frame = tk.Frame(self.root, bg=BG_CARD, pady=10, padx=15)
+        status_frame = tk.Frame(self.root, bg=BG_CARD)
         status_frame.pack(fill="x", padx=20, pady=8)
 
         # Текст статуса подключения с начальным эмодзи
@@ -244,7 +244,7 @@ class NotifierApp:
             font=(UI_FONT, 10),
             anchor="center"
         )
-        self.status_label.pack(fill="x", expand=True)
+        self.status_label.pack(fill="x", expand=True, pady=10, padx=15)
 
         # Кнопки
         log_debug("Linux-пульт: Создание btn_history...")
