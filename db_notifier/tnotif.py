@@ -33,16 +33,29 @@ def clean_emojis(text: str) -> str:
     """Удаляет Unicode-эмодзи и специальные графические символы на Linux для стабильности на старых X11."""
     if not text or is_win:
         return text
-    # Очищаем спецсимволы Zero Width Joiner и селекторы
-    text = text.replace('\u200d', '').replace('\ufe0f', '')
     try:
-        # Убираем все суррогатные пары (эмодзи) и значки
-        pattern = re.compile(
-            r'[\u25a0-\u27bf]|[\u2b50]|[\u2300-\u23ff]|[\ud800-\udbff][\udc00-\udfff]',
-            re.UNICODE
-        )
-        cleaned = pattern.sub('', text)
-        return " ".join(cleaned.split())
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # Оставляем только символы из базовой многоязычной плоскости (BMP, <= 0xFFFF)
+            chars = []
+            for char in line:
+                code = ord(char)
+                if code > 0xFFFF:
+                    continue
+                if 0xD800 <= code <= 0xDFFF:
+                    continue
+                chars.append(char)
+            line_bmp = "".join(chars)
+            
+            # Удаляем спецсимволы значков в пределах BMP (радиация, карандаши, стрелки и т.д.)
+            pattern = re.compile(
+                r'[\u25a0-\u27bf]|[\u2b50]|[\u2300-\u23ff]',
+                re.UNICODE
+            )
+            cleaned_line = pattern.sub('', line_bmp)
+            cleaned_lines.append(" ".join(cleaned_line.split()))
+        return "\n".join(cleaned_lines)
     except Exception:
         return text
 
