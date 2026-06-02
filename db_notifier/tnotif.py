@@ -411,6 +411,7 @@ class NotifierApp:
             else:
                 if self.cards_window is None or not self.cards_window.winfo_exists():
                     self.cards_window = tk.Toplevel(self.root)
+                    self.cards_window.withdraw()  # Скрываем сразу, чтобы избежать мерцания в 0,0
                     self.cards_window.configure(bg=BG_WINDOW)
                     self.cards_window.overrideredirect(True)
                     self.cards_window.wm_attributes("-topmost", True)
@@ -496,18 +497,18 @@ class NotifierApp:
             log_debug("main.py: Геометрия: {}x{}+{}+{}".format(self.card_width, total_h, x, y))
 
             if not is_win:
-                # На X11/Linux сначала нужно отобразить окно (deiconify), 
-                # и только потом применять overrideredirect(True), иначе WM скроет его навсегда.
-                container.deiconify()
-                container.overrideredirect(True)
+                # На X11/Linux для overrideredirect окон крайне важен порядок:
+                # сначала устанавливаем геометрию, затем отображаем через deiconify.
+                # Функция overrideredirect(True) уже вызвана при создании Toplevel.
                 container.geometry("{}x{}+{}+{}".format(self.card_width, total_h, x, y))
+                container.deiconify()
                 try:
                     container.attributes("-alpha", 0.95)
                 except Exception:
                     pass
                 container.lift()
                 container.update()
-                log_debug("main.py: [Linux] Окно отображено через deiconify + overrideredirect(True)")
+                log_debug("main.py: [Linux] Окно позиционировано и отображено в {}x{}+{}+{}".format(self.card_width, total_h, x, y))
             else:
                 self.root.overrideredirect(True)
                 self.root.wm_attributes("-topmost", True)
