@@ -177,12 +177,12 @@ class NotifierApp:
         self.margin_x = 20
         self.margin_y = 60
 
-        self.cards: list[NotificationCard] = []
-        self.event_queue: queue.Queue = queue.Queue()
-        self.status_queue: queue.Queue = queue.Queue()
+        self.cards = []
+        self.event_queue = queue.Queue()
+        self.status_queue = queue.Queue()
         
         # Хранилище истории уведомлений за текущие сутки
-        self.history: list[dict] = []
+        self.history = []
 
         # Трей и управление окнами в зависимости от ОС
         self.tray_icon = None
@@ -688,7 +688,7 @@ class NotifierApp:
                 # Linux: воспроизводим системный звук уведомления
                 if platform.system() == "Linux":
                     # Ищем подходящий аудио-плейер
-                    player: str | None = None
+                    player = None
                     for cmd in ("paplay", "pw-play", "aplay"):
                         if shutil.which(cmd):
                             player = cmd
