@@ -190,20 +190,6 @@ class NotifierApp:
         """Инициализация аккуратного пульта управления для Linux."""
         log_debug("main.py: Инициализация Linux-пульта...")
         self.root.title("Teragis Notifier")
-        self.root.resizable(False, False)
-
-        # Размеры и центрирование
-        win_w = 340
-        win_h = 220
-        log_debug("Linux-пульт: Определение размеров экрана...")
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        log_debug(f"Linux-пульт: sw={sw}, sh={sh}")
-        x = (sw - win_w) // 2
-        y = (sh - win_h) // 2
-        log_debug(f"Linux-пульт: Установка геометрии {win_w}x{win_h}+{x}+{y}...")
-        self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
-        log_debug("Linux-пульт: Геометрия установлена!")
 
         # Кастомный заголовок
         log_debug("Linux-пульт: Создание title_label...")
@@ -295,6 +281,20 @@ class NotifierApp:
         # Обработка закрытия окна крестиком
         log_debug("Linux-пульт: Настройка WM_DELETE_WINDOW...")
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+        # Размеры и центрирование (выполняется строго ПОСЛЕ создания и упаковки всех виджетов!)
+        win_w = 340
+        win_h = 220
+        log_debug("Linux-пульт: Определение размеров экрана...")
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        log_debug(f"Linux-пульт: sw={sw}, sh={sh}")
+        x = (sw - win_w) // 2
+        y = (sh - win_h) // 2
+        log_debug(f"Linux-пульт: Установка геометрии {win_w}x{win_h}+{x}+{y}...")
+        self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        log_debug("Linux-пульт: Геометрия установлена!")
+        self.root.resizable(False, False)
         log_debug("Linux-пульт: Инициализация завершена!")
 
     # --- Трей ---
