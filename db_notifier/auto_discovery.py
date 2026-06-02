@@ -19,7 +19,11 @@ def get_real_work_dir():
 work_dir = get_real_work_dir()
 
 def log_debug(msg):
-    """Записывает отладочные сообщения в файл notifier_debug.txt рядом с .exe"""
+    """Записывает отладочные сообщения в консоль и в файл notifier_debug.txt рядом с .exe"""
+    try:
+        print(f"[DEBUG] {msg}")
+    except Exception:
+        pass
     try:
         debug_path = os.path.join(work_dir, "notifier_debug.txt")
         with open(debug_path, "a", encoding="utf-8") as f:
