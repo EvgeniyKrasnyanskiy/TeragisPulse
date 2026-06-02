@@ -189,9 +189,6 @@ class NotifierApp:
     def _init_linux_dashboard(self):
         """Инициализация аккуратного пульта управления для Linux."""
         log_debug("main.py: Инициализация Linux-пульта...")
-        log_debug("Linux-пульт: Вызов deiconify...")
-        self.root.deiconify()
-        log_debug("Linux-пульт: deiconify выполнен!")
         self.root.title("Teragis Notifier")
         self.root.resizable(False, False)
 
