@@ -159,6 +159,7 @@ class NotifierApp:
 
         self.cards: list[NotificationCard] = []
         self.event_queue: queue.Queue = queue.Queue()
+        self.status_queue: queue.Queue = queue.Queue()
         
         # Хранилище истории уведомлений за текущие сутки
         self.history: list[dict] = []
@@ -332,8 +333,8 @@ class NotifierApp:
         threading.Thread(target=tray_worker, daemon=True).start()
 
     def _on_db_status_changed(self, is_connected: bool, status_msg: str):
-        """Обновляет статус подключения потокобезопасно."""
-        self.root.after(0, lambda: self._update_status_ui(is_connected, status_msg))
+        """Обновляет статус подключения потокобезопасно через очередь."""
+        self.status_queue.put((is_connected, status_msg))
 
     def _update_status_ui(self, is_connected: bool, status_msg: str):
         """Обновляет подсказку иконки трея или виджеты пульта управления на Linux."""
@@ -694,8 +695,25 @@ class NotifierApp:
     # --- Опрос очереди ---
 
     def _poll_events(self):
-        """Проверяет очередь событий и выводит новые уведомления."""
+        """Проверяет очереди событий и статусов в главном потоке Tkinter."""
         try:
+            # Опрашиваем очередь изменения статусов БД
+            last_status = None
+            while True:
+                try:
+                    last_status = self.status_queue.get_nowait()
+                    self.status_queue.task_done()
+                except queue.Empty:
+                    break
+            
+            if last_status is not None:
+                is_connected, status_msg = last_status
+                self._update_status_ui(is_connected, status_msg)
+        except Exception as e:
+            log_debug(f"main.py: Ошибка при обработке очереди статусов: {e}")
+
+        try:
+            # Опрашиваем очередь уведомлений
             while True:
                 event = self.event_queue.get_nowait()
                 fio = event.get('fio')
@@ -707,7 +725,7 @@ class NotifierApp:
         except queue.Empty:
             pass
         except Exception as e:
-            log_debug(f"main.py: Ошибка при обработке очереди: {e}")
+            log_debug(f"main.py: Ошибка при обработке очереди уведомлений: {e}")
 
         self.root.after(100, self._poll_events)
 
