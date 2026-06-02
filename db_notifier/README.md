@@ -69,24 +69,29 @@ DB_PORT=5432            # Порт
 1. Проверит наличие Python.
 2. Установит `pyinstaller`, если он не установлен.
 3. Скачает зависимости из `requirements.txt`.
-4. Запустит сборку в один `.exe` файл без консоли.
-5. Готовый файл сохранится в общей корневой папке проекта: `dist/TeragisNotifier.exe`.
+4. Запустит сборку в один `.exe` файл без консоли по спецификации `tnotif.spec`.
+5. Готовый файл сохранится в папке: `dist_win/TeragisNotifier.exe`.
 
-### 🐧 Сборка для Linux (Xubuntu):
-1. Установите PyInstaller:
+### 🐧 Сборка для Linux (Xubuntu) с 32-битным интерпретатором:
+Сборка линуксового бинарника выполняется с использованием 32-битной среды CPython из локальной папки `python`:
+
+#### Вариант A. Сборка через WSL (после перезагрузки хост-системы Windows):
+Выполните команду в терминале Windows:
+```bash
+wsl -d Ubuntu -- cd db_notifier && ../python/bin/python3 -m PyInstaller --clean --workpath="build_linux" --distpath="dist_linux" tnotif.spec
+```
+
+#### Вариант B. Сборка на целевой Xubuntu-машине:
+1. Скопируйте проект на вашу Linux-машину.
+2. Перейдите в папку клиента и запустите сборку:
    ```bash
-   pip3 install pyinstaller
+   cd db_notifier
+   ../python/bin/python3 -m PyInstaller --clean --workpath="build_linux" --distpath="dist_linux" tnotif.spec
    ```
-
-2. Соберите бинарный файл (с указанием путей к общей корневой папке `dist` и `build`):
+3. Исполняемый 32-битный файл появится в папке `dist_linux/TeragisNotifier`. Дайте ему права на исполнение и запустите:
    ```bash
-   pyinstaller --onefile --noconsole --name="TeragisNotifier" --clean --paths=".." --hidden-import="identification" --distpath="../dist" --workpath="../build" --specpath="../build" main.py
-   ```
-
-3. Исполняемый файл появится в корневой папке `dist/`. Перенесите его на любую станцию Xubuntu, дайте права на выполнение и запустите!
-   ```bash
-   chmod +x ../dist/TeragisNotifier
-   ../dist/TeragisNotifier
+   chmod +x dist_linux/TeragisNotifier
+   ./dist_linux/TeragisNotifier
    ```
 
 ---
@@ -101,5 +106,5 @@ DB_PORT=5432            # Порт
 4. Заполните поля:
    - **Имя:** `Teragis Notifier`
    - **Описание:** `Фоновые уведомления о готовности планов лечения`
-   - **Команда:** Укажите путь к исполняемому файлу, например: `/home/operator/Desktop/db_notifier` (или `python3 /путь_к_папке/main.py`).
+   - **Команда:** Укажите путь к исполняемому файлу, например: `/home/operator/Desktop/dist_linux/TeragisNotifier` (или `python3 /путь_к_папке/tnotif.py`).
 5. Нажмите **ОК**. Готово! Теперь при старте системы клиент тихо свернется в трей.
