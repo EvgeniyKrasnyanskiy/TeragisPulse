@@ -223,7 +223,7 @@ class NotifierApp:
             highlightthickness=0
         )
         self.status_canvas.pack(side="left", padx=(10, 5), pady=8)
-        self.status_led = self.status_canvas.create_ellipse(2, 2, 14, 14, fill="#777777", outline="")
+        self.status_led = self.status_canvas.create_oval(2, 2, 14, 14, fill="#777777", outline="")
 
         # Текст статуса подключения
         self.status_label = tk.Label(
