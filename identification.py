@@ -96,7 +96,7 @@ def identification_func(note: str) -> Tuple[str, str, str, str]:
         if physicist_cap in physicist_dict:
             physicist = physicist_dict[physicist_cap]
         else:
-            physicist = f"{physicist_dict['Физик']} {physicist_cap}"
+            physicist = "{} {}".format(physicist_dict['Физик'], physicist_cap)
 
         doctor_cap = doctor_raw.capitalize()
         if doctor_cap in first_ro_dict:
@@ -106,10 +106,10 @@ def identification_func(note: str) -> Tuple[str, str, str, str]:
             doctor = second_ro_dict[doctor_cap]
             office = '2'
         else:
-            doctor = f"{first_ro_dict['Врач']} {doctor_cap}"
+            doctor = "{} {}".format(first_ro_dict['Врач'], doctor_cap)
             office = '0'
 
     except Exception as e:
-        logger.error(f"[Identification] Ошибка при парсинге заметки '{note}': {e}")
+        logger.error("[Identification] Ошибка при парсинге заметки '{}': {}".format(note, e))
 
     return doctor, physicist, laying, office

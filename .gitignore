@@ -29,4 +29,9 @@ db_notifier/build_linux/
 db_notifier/dist_linux/
 db_notifier/build_windows/
 db_notifier/dist_windows/
+db_notifier/build_win/
+db_notifier/dist_win/
+db_notifier/notifier_debug.txt
+db_notifier/*.tar.gz
+python/
 *.spec
