@@ -168,14 +168,19 @@ class NotifierApp:
             self.root.withdraw()  # Полностью скрыть до первого уведомления
             self._init_tray()
         else:
+            log_debug("main.py: Вызов _init_linux_dashboard...")
             self._init_linux_dashboard()
+            log_debug("main.py: _init_linux_dashboard успешно завершен!")
 
         # Прослушивание БД
+        log_debug("main.py: Создание DBListener...")
         self.db_listener = DBListener(
             event_queue=self.event_queue,
             on_status_change=self._on_db_status_changed
         )
+        log_debug("main.py: Запуск DBListener...")
         self.db_listener.start()
+        log_debug("main.py: DBListener успешно запущен!")
 
         # Опрос очереди событий
         self.root.after(100, self._poll_events)
@@ -184,20 +189,27 @@ class NotifierApp:
     def _init_linux_dashboard(self):
         """Инициализация аккуратного пульта управления для Linux."""
         log_debug("main.py: Инициализация Linux-пульта...")
+        log_debug("Linux-пульт: Вызов deiconify...")
         self.root.deiconify()
+        log_debug("Linux-пульт: deiconify выполнен!")
         self.root.title("Teragis Notifier")
         self.root.resizable(False, False)
 
         # Размеры и центрирование
         win_w = 340
         win_h = 220
+        log_debug("Linux-пульт: Определение размеров экрана...")
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
+        log_debug(f"Linux-пульт: sw={sw}, sh={sh}")
         x = (sw - win_w) // 2
         y = (sh - win_h) // 2
+        log_debug(f"Linux-пульт: Установка геометрии {win_w}x{win_h}+{x}+{y}...")
         self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        log_debug("Linux-пульт: Геометрия установлена!")
 
         # Кастомный заголовок
+        log_debug("Linux-пульт: Создание title_label...")
         title_label = tk.Label(
             self.root,
             text="Teragis Pulse Notifier",
@@ -207,8 +219,10 @@ class NotifierApp:
             pady=10
         )
         title_label.pack()
+        log_debug("Linux-пульт: title_label упакован!")
 
         # Рамка для статуса подключения
+        log_debug("Linux-пульт: Создание status_frame...")
         status_frame = tk.Frame(
             self.root,
             bg=BG_CARD,
@@ -217,8 +231,10 @@ class NotifierApp:
             bd=0
         )
         status_frame.pack(fill="x", padx=20, pady=5)
+        log_debug("Linux-пульт: status_frame упакован!")
 
         # Canvas для светодиода статуса
+        log_debug("Linux-пульт: Создание status_canvas...")
         self.status_canvas = tk.Canvas(
             status_frame,
             width=16,
@@ -227,9 +243,13 @@ class NotifierApp:
             highlightthickness=0
         )
         self.status_canvas.pack(side="left", padx=(10, 5), pady=8)
+        log_debug("Linux-пульт: status_canvas упакован!")
+        log_debug("Linux-пульт: Рисование status_led (oval)...")
         self.status_led = self.status_canvas.create_oval(2, 2, 14, 14, fill="#777777", outline="")
+        log_debug("Linux-пульт: status_led отрисован!")
 
         # Текст статуса подключения
+        log_debug("Linux-пульт: Создание status_label...")
         self.status_label = tk.Label(
             status_frame,
             text="Инициализация...",
@@ -239,8 +259,10 @@ class NotifierApp:
             anchor="w"
         )
         self.status_label.pack(side="left", fill="x", expand=True, pady=8)
+        log_debug("Linux-пульт: status_label упакован!")
 
         # Кнопка истории
+        log_debug("Linux-пульт: Создание btn_history...")
         btn_history = tk.Button(
             self.root,
             text="🕒 История за сегодня",
@@ -254,8 +276,10 @@ class NotifierApp:
             command=self.show_history_window
         )
         btn_history.pack(fill="x", padx=20, pady=(15, 5), ipady=5)
+        log_debug("Linux-пульт: btn_history упакован!")
 
         # Кнопка выхода
+        log_debug("Linux-пульт: Создание btn_exit...")
         btn_exit = tk.Button(
             self.root,
             text="🚪 Выход",
@@ -269,9 +293,12 @@ class NotifierApp:
             command=self.on_exit
         )
         btn_exit.pack(fill="x", padx=20, pady=5, ipady=5)
+        log_debug("Linux-пульт: btn_exit упакован!")
 
         # Обработка закрытия окна крестиком
+        log_debug("Linux-пульт: Настройка WM_DELETE_WINDOW...")
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+        log_debug("Linux-пульт: Инициализация завершена!")
 
     # --- Трей ---
 
