@@ -13,7 +13,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from main import NotifierApp, NotificationCard
+from tnotif import NotifierApp, NotificationCard
 
 class TestNotifierApp(NotifierApp):
     def __init__(self):

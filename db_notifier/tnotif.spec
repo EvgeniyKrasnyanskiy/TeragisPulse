@@ -1,24 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
 import platform
+from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = []
 hiddenimports = ['identification']
 
-# pystray собирается только под Windows
-if platform.system() == 'Windows':
-    from PyInstaller.utils.hooks import collect_all
+is_win = platform.system() == 'Windows'
+
+if is_win:
+    # Собираем pystray только под Windows
     tmp_ret = collect_all('pystray')
     datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+    # На Windows исключаем линуксовый site-packages, чтобы не было конфликтов PIL (ImportError _imaging)
+    pathex_dirs = ['..']
+else:
+    # На Linux подключаем 32-битный интерпретатор
+    pathex_dirs = ['../python/lib/python3.10/site-packages', '..']
 
-from PyInstaller.utils.hooks import collect_all
+# Pillow собирается на обеих платформах
 tmp_ret = collect_all('PIL')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-
 a = Analysis(
-    ['main.py'],
-    pathex=['../python/lib/python3.10/site-packages', '..'],
+    ['tnotif.py'],
+    pathex=pathex_dirs,
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -34,26 +40,21 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
-    name='main',
+    name='TeragisNotifier',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='main',
 )
