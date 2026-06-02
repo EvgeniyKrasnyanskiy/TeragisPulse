@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import time
 import threading
+import re
 import tkinter as tk
 from tkinter import font as tkfont
 from PIL import Image, ImageDraw
@@ -26,6 +27,24 @@ try:
     import winsound
 except ImportError:
     winsound = None
+
+
+def clean_emojis(text: str) -> str:
+    """Удаляет Unicode-эмодзи и специальные графические символы на Linux для стабильности на старых X11."""
+    if not text or is_win:
+        return text
+    # Очищаем спецсимволы Zero Width Joiner и селекторы
+    text = text.replace('\u200d', '').replace('\ufe0f', '')
+    try:
+        # Убираем все суррогатные пары (эмодзи) и значки
+        pattern = re.compile(
+            r'[\u25a0-\u27bf]|[\u2b50]|[\u2300-\u23ff]|[\ud800-\udbff][\udc00-\udfff]',
+            re.UNICODE
+        )
+        cleaned = pattern.sub('', text)
+        return " ".join(cleaned.split())
+    except Exception:
+        return text
 
 
 # Настройка логирования до импорта db_listener
@@ -101,8 +120,9 @@ class NotificationCard(tk.Frame):
         ).pack(fill="x")
 
         # ФИО
+        display_fio = fio if is_win else f"Пациент: {fio}"
         tk.Label(
-            content, text=f"👤 {fio}",
+            content, text=display_fio,
             bg=BG_CARD, fg=TEXT_WHITE,
             font=(UI_FONT, 11, "bold"), anchor="w"
         ).pack(fill="x", pady=(2, 0))
@@ -218,7 +238,7 @@ class NotifierApp:
         log_debug("Linux-пульт: Создание status_label...")
         self.status_label = tk.Label(
             status_frame,
-            text="⚪ Инициализация...",
+            text="[ ... ] Инициализация...",
             bg=BG_CARD,
             fg=TEXT_GREY,
             font=(UI_FONT, 10),
@@ -228,9 +248,10 @@ class NotifierApp:
 
         # Кнопки
         log_debug("Linux-пульт: Создание btn_history...")
+        history_btn_text = "🕒 История за сегодня" if is_win else "История за сегодня"
         btn_history = tk.Button(
             self.root,
-            text="🕒 История за сегодня",
+            text=history_btn_text,
             bg=ACCENT_BLUE,
             fg=TEXT_WHITE,
             activebackground=HOVER_DARK,
@@ -243,9 +264,10 @@ class NotifierApp:
         btn_history.pack(fill="x", padx=20, pady=(10, 5), ipady=5)
 
         log_debug("Linux-пульт: Создание btn_exit...")
+        exit_btn_text = "🚪 Выход" if is_win else "Выход"
         btn_exit = tk.Button(
             self.root,
-            text="🚪 Выход",
+            text=exit_btn_text,
             bg="#444444",
             fg=TEXT_WHITE,
             activebackground="#666666",
@@ -345,23 +367,25 @@ class NotifierApp:
             if not hasattr(self, 'status_label'):
                 return
             
-            # Определяем эмодзи статуса
+            # Определяем текстовый маркер статуса
             if is_connected:
-                emoji = "🟢"
+                status_prefix = "[ OK ]"
             elif "Сбой" in status_msg or "не найден" in status_msg:
-                emoji = "🔴"
+                status_prefix = "[ СБОЙ ]"
             elif "Подключение" in status_msg or "Поиск" in status_msg:
-                emoji = "🟡"
+                status_prefix = "[ ПОИСК ]"
             else:
-                emoji = "⚪"
+                status_prefix = "[ ... ]"
             
-            # Обновляем текст статуса подключения вместе с эмодзи
-            self.status_label.config(text=f"{emoji} {status_msg}")
+            # Обновляем текст статуса подключения вместе с префиксом
+            self.status_label.config(text=f"{status_prefix} {status_msg}")
 
     # --- Карточки уведомлений ---
 
     def add_notification(self, fio: str, details: str):
         """Добавляет новое уведомление сверху стека."""
+        fio = clean_emojis(fio)
+        details = clean_emojis(details)
         log_debug(f"main.py: Добавление уведомления для {fio}...")
         try:
             # Строгий лимит ротации: не более 5 карточек одновременно
@@ -542,8 +566,9 @@ class NotifierApp:
             header_frame = tk.Frame(history_win, bg=BG_WINDOW, pady=10)
             header_frame.pack(fill="x")
             
+            history_title = "🕒 История уведомлений за сегодня" if is_win else "История уведомлений за сегодня"
             tk.Label(
-                header_frame, text="🕒 История уведомлений за сегодня",
+                header_frame, text=history_title,
                 bg=BG_WINDOW, fg=ACCENT_BLUE,
                 font=(UI_FONT, 14, "bold")
             ).pack(side="left", padx=15)
@@ -610,8 +635,9 @@ class NotifierApp:
                     title_frame = tk.Frame(info_frame, bg=BG_CARD)
                     title_frame.pack(fill="x")
                     
+                    display_history_fio = item['fio'] if is_win else f"Пациент: {item['fio']}"
                     tk.Label(
-                        title_frame, text=f"👤 {item['fio']}",
+                        title_frame, text=display_history_fio,
                         bg=BG_CARD, fg=TEXT_WHITE,
                         font=(UI_FONT, 10, "bold"), anchor="w"
                     ).pack(side="left")
