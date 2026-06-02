@@ -141,6 +141,10 @@ class NotifierApp:
 
         # Главное окно — стандартный tkinter.Tk (без customtkinter!)
         self.root = tk.Tk()
+        try:
+            self.root.tk.call('encoding', 'system', 'utf-8')
+        except Exception:
+            pass
         self.root.configure(bg=BG_WINDOW)
 
         # Размеры карточки и стека
