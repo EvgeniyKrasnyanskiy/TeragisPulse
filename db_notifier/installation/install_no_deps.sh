@@ -4,14 +4,22 @@ set -e
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Определение структуры каталогов (из репозитория или из распакованного дистрибутива)
-if [ -f "$SRC_DIR/tnotif.py" ]; then
-    # Скрипт запущен внутри самой папки db_notifier
-    DB_NOTIFIER_SRC="$SRC_DIR"
+# Универсальное определение структуры каталогов
+if [ -f "$SRC_DIR/../tnotif.py" ]; then
+    # Вариант А: Скрипт запущен из папки installation (внутри db_notifier)
+    DB_NOTIFIER_SRC="$(cd "$SRC_DIR/.." && pwd)"
     SCRIPTS_SRC="$SRC_DIR"
-else
-    # Скрипт запущен из корня дистрибутива, где db_notifier — подпапка
+elif [ -f "$SRC_DIR/db_notifier/tnotif.py" ]; then
+    # Вариант Б: Скрипт запущен из корня дистрибутива, а в db_notifier/installation лежат скрипты
     DB_NOTIFIER_SRC="$SRC_DIR/db_notifier"
+    if [ -d "$SRC_DIR/db_notifier/installation" ]; then
+        SCRIPTS_SRC="$SRC_DIR/db_notifier/installation"
+    else
+        SCRIPTS_SRC="$SRC_DIR"
+    fi
+else
+    # Вариант В: Скрипт запущен из папки, где tnotif.py лежит рядом
+    DB_NOTIFIER_SRC="$SRC_DIR"
     SCRIPTS_SRC="$SRC_DIR"
 fi
 
