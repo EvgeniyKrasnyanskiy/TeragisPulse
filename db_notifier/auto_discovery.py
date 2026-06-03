@@ -27,14 +27,22 @@ except Exception:
     pass
 
 def log_debug(msg):
-    """Записывает отладочные сообщения в консоль и в файл notifier_debug.txt рядом с .exe"""
+    """Записывает отладочные сообщения в консоль и в файл notifier_debug.txt рядом с .exe с ротацией в 1 МБ."""
     try:
         print("[DEBUG] {}".format(msg))
     except Exception:
         pass
     try:
         debug_path = os.path.join(work_dir, "notifier_debug.txt")
-        with open(debug_path, "a", encoding="utf-8") as f:
+        # Проверяем размер лог-файла перед каждой записью
+        mode = "a"
+        try:
+            if os.path.exists(debug_path) and os.path.getsize(debug_path) > 1024 * 1024:
+                mode = "w"  # Очищаем файл, если он превысил 1 МБ
+        except Exception:
+            pass
+            
+        with open(debug_path, mode, encoding="utf-8") as f:
             f.write("{} - {}\n".format(time.strftime('%Y-%m-%d %H:%M:%S'), msg))
     except Exception:
         pass
