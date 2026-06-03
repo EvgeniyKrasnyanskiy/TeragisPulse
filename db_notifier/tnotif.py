@@ -592,7 +592,8 @@ class NotifierApp:
             if card in self.cards:
                 self.cards.remove(card)
                 card.destroy()
-                self._repack_cards()
+                # Вызываем перепаковку отложенно, чтобы дать завершиться обработчику клика
+                self.root.after(10, self._repack_cards)
                 import gc
                 gc.collect()
         except Exception as e:
@@ -830,6 +831,8 @@ class NotifierApp:
 
     def _play_notification_sound(self) -> None:
         """Воспроизводит короткий звуковой сигнал (кроссплатформенно)."""
+        if not self.sound_enabled:
+            return
         now = time.time()
         if now - getattr(self, '_last_sound_time', 0.0) < 2.0:
             return
