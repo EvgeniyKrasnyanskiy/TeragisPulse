@@ -9,7 +9,7 @@ sudo apt-get install -y python3 python3-pip python3-tk
 
 echo "=== Установка Python-библиотек в пространство пользователя ==="
 cd "$(dirname "$0")"
-pip3 install --user -r db_notifier/requirements.txt
+pip3 install --user -r db_notifier/requirements.txt --break-system-packages 2>/dev/null || pip3 install --user -r db_notifier/requirements.txt
 
 echo "=== Настройка прав выполнения ==="
 chmod +x start.sh autostart.sh uninstall.sh
