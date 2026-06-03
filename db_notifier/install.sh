@@ -38,6 +38,10 @@ echo "=== Копирование файлов приложения ==="
 mkdir -p "$INSTALL_DIR/db_notifier"
 cp -rf "$DB_NOTIFIER_SRC"/. "$INSTALL_DIR/db_notifier/"
 cp -f "$SCRIPTS_SRC/start.sh" "$SCRIPTS_SRC/autostart.sh" "$SCRIPTS_SRC/uninstall.sh" "$SCRIPTS_SRC/instruction.txt" "$INSTALL_DIR/"
+if [ -f "$SCRIPTS_SRC/.env" ]; then
+    echo "=== Копирование конфигурационного файла .env ==="
+    cp -f "$SCRIPTS_SRC/.env" "$INSTALL_DIR/db_notifier/"
+fi
 
 echo "=== Установка Python-библиотек в пространство пользователя ==="
 pip3 install --user -r "$INSTALL_DIR/db_notifier/requirements.txt" --break-system-packages 2>/dev/null || pip3 install --user -r "$INSTALL_DIR/db_notifier/requirements.txt"

@@ -136,27 +136,29 @@ def test_pg_connection(host, creds):
         log_debug("Не удалось подключиться к {}. Ошибка скрыта для безопасности".format(host))
         return False
 
-async def scan_port(ip, port, timeout=0.5):
-    """Быстрая асинхронная проверка доступности TCP порта с закрытием сокета."""
-    try:
-        reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
-        writer.close()
-        if hasattr(writer, 'wait_closed'):
-            try:
-                await writer.wait_closed()
-            except Exception:
-                pass
-        return ip
-    except Exception:
-        return None
+async def scan_port(ip, port, semaphore, timeout=0.5):
+    """Быстрая асинхронная проверка доступности TCP порта с закрытием сокета и семафором."""
+    async with semaphore:
+        try:
+            reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
+            writer.close()
+            if hasattr(writer, 'wait_closed'):
+                try:
+                    await writer.wait_closed()
+                except Exception:
+                    pass
+            return ip
+        except Exception:
+            return None
 
 async def find_postgres_in_subnet(subnet_prefix, port, executor, creds):
-    """Асинхронно сканирует подсеть на наличие порта 5432 и проверяет авторизацию."""
+    """Асинхронно сканирует подсеть на наличие порта 5432 и проверяет авторизацию (не более 50 одновременных сокетов)."""
+    semaphore = asyncio.Semaphore(50)
     tasks = []
     # Сканируем хосты от 1 до 254
     for i in range(1, 255):
         ip = "{}{}".format(subnet_prefix, i)
-        tasks.append(scan_port(ip, port))
+        tasks.append(scan_port(ip, port, semaphore))
     
     # Ждем завершения всех проверок портов
     results = await asyncio.gather(*tasks)
@@ -191,7 +193,7 @@ def get_local_ip():
     return ip
 
 _net_scan_count = 0
-MAX_NET_SCAN_ATTEMPTS = 3
+MAX_NET_SCAN_ATTEMPTS = 1
 
 def discover_db_host():
     """
@@ -212,7 +214,8 @@ def discover_db_host():
             set_cached_host(env_host)
             return env_host
         else:
-            log_debug("-> Хост {} из .env НЕ отвечает.".format(env_host))
+            log_debug("-> Хост {} из .env НЕ отвечает. Сканирование сети пропущено.".format(env_host))
+            return None
 
     # 2. Проверяем кэш
     cached = get_cached_host()
@@ -224,20 +227,39 @@ def discover_db_host():
         else:
             log_debug("-> Кэш {} не отвечает.".format(cached))
 
-    # 3. Проверяем localhost
-    log_debug("3. Проверка подключения к localhost (127.0.0.1)...")
+    # 3. Детектор локального сервера PostgreSQL (если порт 5432 открыт на localhost, сканирование не нужно)
+    is_local_pg = False
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        if s.connect_ex(('127.0.0.1', int(creds['port']))) == 0:
+            is_local_pg = True
+        s.close()
+    except Exception:
+        pass
+
+    if is_local_pg:
+        log_debug("-> Обнаружен локальный сервер PostgreSQL (порт {} открыт на 127.0.0.1). Сканирование сети отключено.".format(creds['port']))
+        if test_pg_connection('127.0.0.1', creds):
+            log_debug("-> Локальное подключение успешно!")
+            set_cached_host('127.0.0.1')
+            return '127.0.0.1'
+        return None
+
+    # 4. Проверяем localhost (обычный опрос)
+    log_debug("4. Проверка подключения к localhost (127.0.0.1)...")
     if test_pg_connection('127.0.0.1', creds):
         log_debug("-> Локальный хост рабочий!")
         set_cached_host('127.0.0.1')
         return '127.0.0.1'
 
-    # 4. Сканируем локальную сеть
+    # 5. Сканируем локальную сеть
     if _net_scan_count >= MAX_NET_SCAN_ATTEMPTS:
-        log_debug("4. Проверка сканирования сети: Лимит попыток сканирования сети исчерпан ({}/{}). Пропускаем.".format(_net_scan_count, MAX_NET_SCAN_ATTEMPTS))
+        log_debug("5. Проверка сканирования сети: Лимит попыток сканирования сети исчерпан ({}/{}). Пропускаем.".format(_net_scan_count, MAX_NET_SCAN_ATTEMPTS))
         return None
 
     local_ip = get_local_ip()
-    log_debug("4. Проверка сканирования сети. Локальный IP: {}. Попытка {}/{}.".format(local_ip, _net_scan_count + 1, MAX_NET_SCAN_ATTEMPTS))
+    log_debug("5. Проверка сканирования сети. Локальный IP: {}. Попытка {}/{}.".format(local_ip, _net_scan_count + 1, MAX_NET_SCAN_ATTEMPTS))
     if local_ip == '127.0.0.1':
         log_debug("-> Локальный IP 127.0.0.1, сканирование отменено.")
         return None # Мы не в сети
@@ -266,6 +288,18 @@ def discover_db_host():
     except Exception as e:
         log_debug("Ошибка при сканировании подсети: {}".format(e))
     finally:
+        try:
+            if hasattr(asyncio, 'all_tasks'):
+                pending = asyncio.all_tasks(loop)
+            else:
+                pending = asyncio.Task.all_tasks(loop)
+                
+            if pending:
+                for task in pending:
+                    task.cancel()
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except Exception:
+            pass
         try:
             loop.close()
         except Exception:

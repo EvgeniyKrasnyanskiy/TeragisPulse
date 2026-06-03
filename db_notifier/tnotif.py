@@ -233,7 +233,10 @@ class NotifierApp:
         log_debug("main.py: Создание оверлея...")
         self.overlay = tk.Toplevel(self.root)
         self.overlay.overrideredirect(True)
-        self.overlay.attributes("-topmost", True)
+        try:
+            self.overlay.attributes("-topmost", True)
+        except Exception:
+            pass
         self.overlay.configure(bg=BG_WINDOW)
         
         # Разрешаем прозрачность если поддерживается
@@ -382,7 +385,10 @@ class NotifierApp:
         self._hide_tooltip()
         self.tooltip_window = tk.Toplevel(self.overlay)
         self.tooltip_window.overrideredirect(True)
-        self.tooltip_window.attributes("-topmost", True)
+        try:
+            self.tooltip_window.attributes("-topmost", True)
+        except Exception:
+            pass
         self.tooltip_window.configure(bg="#222222")
         
         lbl = tk.Label(self.tooltip_window, text=self.overlay_status_msg, bg="#222222", fg=TEXT_WHITE, font=(UI_FONT, 9), padx=6, pady=4, bd=1, relief="solid")
@@ -565,7 +571,10 @@ class NotifierApp:
                     self.cards_window.withdraw()  # Скрываем сразу, чтобы избежать мерцания в 0,0
                     self.cards_window.configure(bg=BG_WINDOW)
                     self.cards_window.overrideredirect(True)
-                    self.cards_window.wm_attributes("-topmost", True)
+                    try:
+                        self.cards_window.wm_attributes("-topmost", True)
+                    except Exception:
+                        pass
                     try:
                         self.cards_window.attributes("-alpha", 0.95)
                     except Exception:
@@ -605,6 +614,8 @@ class NotifierApp:
                 self.cards.remove(card)
                 card.destroy()
                 self._repack_cards()
+                import gc
+                gc.collect()
         except Exception as e:
             log_debug("main.py: Ошибка в _remove_card: {}".format(e))
 
@@ -710,7 +721,10 @@ class NotifierApp:
             history_win.geometry("{}x{}+{}+{}".format(win_w, win_h, x, y))
             
             # Устанавливаем поверх остальных окон и фокусируемся
-            history_win.attributes("-topmost", True)
+            try:
+                history_win.attributes("-topmost", True)
+            except Exception:
+                pass
             history_win.focus_force()
 
             # Шапка окна
@@ -837,6 +851,11 @@ class NotifierApp:
 
     def _play_notification_sound(self) -> None:
         """Воспроизводит короткий звуковой сигнал (кроссплатформенно)."""
+        now = time.time()
+        if now - getattr(self, '_last_sound_time', 0.0) < 2.0:
+            return
+        self._last_sound_time = now
+        
         def _sound_worker():
             try:
                 # Windows: winsound.Beep через системный спикер
