@@ -15,6 +15,7 @@ import threading
 import re
 import tkinter as tk
 from tkinter import font as tkfont
+from tkinter import messagebox
 from PIL import Image, ImageDraw
 
 is_win = os.name == 'nt'
@@ -241,12 +242,16 @@ class NotifierApp:
         except Exception:
             pass
 
-        self.overlay_canvas = tk.Canvas(self.overlay, width=40, height=40, bg=BG_WINDOW, highlightthickness=0)
+        # Инициализация настроек из кэша
+        settings = self._get_cached_settings()
+        self.sound_enabled = settings.get('sound_enabled', True)
+
+        self.overlay_canvas = tk.Canvas(self.overlay, width=12, height=12, bg=BG_WINDOW, highlightthickness=0)
         self.overlay_canvas.pack()
 
-        # Овал статуса и текст
-        self.overlay_circle = self.overlay_canvas.create_oval(2, 2, 38, 38, fill=BG_CARD, outline=ACCENT_BLUE, width=2)
-        self.overlay_text = self.overlay_canvas.create_text(20, 20, text="T", fill=TEXT_WHITE, font=(UI_FONT, 14, "bold"))
+        # Овал статуса и текст (размер 12x12)
+        self.overlay_circle = self.overlay_canvas.create_oval(1, 1, 11, 11, fill=BG_CARD, outline=ACCENT_BLUE, width=1)
+        self.overlay_text = self.overlay_canvas.create_text(6, 6, text="T", fill=TEXT_WHITE, font=(UI_FONT, 5, "bold"))
 
         # Биндинги
         self.overlay_canvas.bind("<Button-1>", self._on_overlay_click)
@@ -257,33 +262,33 @@ class NotifierApp:
         self.overlay_canvas.bind("<Enter>", self._on_overlay_enter)
         self.overlay_canvas.bind("<Leave>", self._on_overlay_leave)
 
-        # Глобальные биндинги Shift
-        self.root.bind_all("<KeyPress-Shift_L>", self._on_shift_press)
-        self.root.bind_all("<KeyRelease-Shift_L>", self._on_shift_release)
-        self.root.bind_all("<KeyPress-Shift_R>", self._on_shift_press)
-        self.root.bind_all("<KeyRelease-Shift_R>", self._on_shift_release)
-
         # Горячие клавиши
         self.root.bind_all("<Control-Shift-Key-H>", lambda e: self.toggle_overlay())
         self.root.bind_all("<Control-Shift-Key-Q>", lambda e: self.on_exit())
 
+        # Создаем меню один раз
+        self.menu = tk.Menu(self.overlay, tearoff=0, bg=BG_WINDOW, fg=TEXT_WHITE,
+                            activebackground=ACCENT_BLUE, activeforeground=TEXT_WHITE,
+                            font=(UI_FONT, 10))
+        # Создаем меню настроек карточки один раз
+        self.card_menu = tk.Menu(self.root, tearoff=0, bg=BG_WINDOW, fg=TEXT_WHITE,
+                                 activebackground=ACCENT_BLUE, activeforeground=TEXT_WHITE,
+                                 font=(UI_FONT, 10))
+
         # Позиционирование
-        coords = self._get_cached_coords()
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        if coords:
-            x, y = coords
-            if x < 0 or x > sw - 40: x = (sw - 40) // 2
-            if y < 0 or y > sh - 40: y = 35
-        else:
-            x = (sw - 40) // 2
+        x = settings.get('x')
+        y = settings.get('y')
+        if x is None or y is None or x < 0 or x > sw - 12 or y < 0 or y > sh - 12:
+            x = (sw - 12) // 2
             y = 35
             
-        self.overlay.geometry("40x40+{}+{}".format(x, y))
+        self.overlay.geometry("12x12+{}+{}".format(x, y))
         self.overlay_status_msg = "Инициализация..."
         self.tooltip_window = None
 
-    def _get_cached_coords(self):
+    def _get_cached_settings(self):
         try:
             cache_dir = os.path.expanduser('~/.config/teragis_notifier')
             if is_win:
@@ -292,22 +297,35 @@ class NotifierApp:
             if os.path.exists(cache_file):
                 import json
                 with open(cache_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    return data.get('x'), data.get('y')
+                    return json.load(f)
         except Exception:
             pass
-        return None
+        return {}
 
-    def _set_cached_coords(self, x, y):
+    def _save_cached_settings(self):
         try:
             cache_dir = os.path.expanduser('~/.config/teragis_notifier')
             if is_win:
                 cache_dir = os.path.join(os.environ.get('APPDATA', ''), 'teragis_notifier')
             os.makedirs(cache_dir, exist_ok=True)
             cache_file = os.path.join(cache_dir, 'overlay.cache')
+            
+            x, y = 0, 0
+            if self.overlay and self.overlay.winfo_exists():
+                x = self.overlay.winfo_x()
+                y = self.overlay.winfo_y()
+            else:
+                old = self._get_cached_settings()
+                x = old.get('x', 0)
+                y = old.get('y', 0)
+
             import json
             with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump({'x': x, 'y': y}, f)
+                json.dump({
+                    'x': x,
+                    'y': y,
+                    'sound_enabled': self.sound_enabled
+                }, f)
             if not is_win:
                 try:
                     os.chmod(cache_file, 0o600)
@@ -336,12 +354,12 @@ class NotifierApp:
         sh = self.overlay.winfo_screenheight()
 
         if x < 0: x = 0
-        if x > sw - 40: x = sw - 40
+        if x > sw - 12: x = sw - 12
         if y < 0: y = 0
-        if y > sh - 40: y = sh - 40
+        if y > sh - 12: y = sh - 12
 
-        self.overlay.geometry("40x40+{}+{}".format(x, y))
-        self._set_cached_coords(x, y)
+        self.overlay.geometry("12x12+{}+{}".format(x, y))
+        self._save_cached_settings()
         self._hide_tooltip()
 
     def _on_overlay_enter(self, event):
@@ -373,8 +391,8 @@ class NotifierApp:
         lbl.pack()
         
         # Позиционируем чуть ниже оверлея
-        x = self.overlay.winfo_x() + 20 - (lbl.winfo_reqwidth() // 2)
-        y = self.overlay.winfo_y() + 45
+        x = self.overlay.winfo_x() + 6 - (lbl.winfo_reqwidth() // 2)
+        y = self.overlay.winfo_y() + 17
         self.tooltip_window.geometry("+{}+{}".format(x, y))
 
     def _hide_tooltip(self):
@@ -384,12 +402,6 @@ class NotifierApp:
             except Exception:
                 pass
             self.tooltip_window = None
-
-    def _on_shift_press(self, event):
-        self.shift_pressed = True
-
-    def _on_shift_release(self, event):
-        self.shift_pressed = False
 
     def hide_overlay(self):
         if self.overlay:
@@ -407,34 +419,110 @@ class NotifierApp:
             else:
                 self.show_overlay()
 
+    def toggle_sound(self):
+        self.sound_enabled = not self.sound_enabled
+        self._save_cached_settings()
+
+    def _close_context_menu(self):
+        try:
+            self.menu.grab_release()
+        except Exception:
+            pass
+        try:
+            self.menu.unpost()
+        except Exception:
+            pass
+
     def _show_context_menu(self, event):
-        self.menu = tk.Menu(self.overlay, tearoff=0, bg=BG_WINDOW, fg=TEXT_WHITE,
-                            activebackground=ACCENT_BLUE, activeforeground=TEXT_WHITE,
-                            font=(UI_FONT, 10))
-        
+        self._close_context_menu()
+        self.menu.delete(0, "end")
         self.menu.add_command(label="История", command=self.show_history_window)
         self.menu.add_separator()
         
-        if self.shift_pressed:
-            self.menu.add_command(label="Выход", command=self.on_exit)
-        else:
-            self.menu.add_command(label="Скрыть", command=self.hide_overlay)
-            
+        sound_label = "Выключить звук" if self.sound_enabled else "Включить звук"
+        self.menu.add_command(label=sound_label, command=self.toggle_sound)
+        self.menu.add_separator()
+        
+        self.menu.add_command(label="Скрыть", command=self.hide_overlay)
+        self.menu.add_separator()
+        
+        self.menu.add_command(label="Выход", command=self.on_exit, foreground="red")
+        
+        self.menu.bind("<Unmap>", lambda e: self._on_menu_unmap())
+        self.menu.bind("<Button-1>", self._check_menu_click)
+        self.menu.bind("<Button-2>", self._check_menu_click)
+        self.menu.bind("<Button-3>", self._check_menu_click)
+        
         self.menu.post(event.x_root, event.y_root)
+        try:
+            self.menu.grab_set()
+        except Exception:
+            pass
+
+    def _on_menu_unmap(self):
+        try:
+            self.menu.grab_release()
+        except Exception:
+            pass
+
+    def _check_menu_click(self, event):
+        w = self.menu.winfo_width()
+        h = self.menu.winfo_height()
+        if event.x < 0 or event.y < 0 or event.x > w or event.y > h:
+            self._close_context_menu()
+            return "break"
+
+    def _close_card_menu(self):
+        try:
+            self.card_menu.grab_release()
+        except Exception:
+            pass
+        try:
+            self.card_menu.unpost()
+        except Exception:
+            pass
 
     def _show_card_settings_menu(self, event):
-        card_menu = tk.Menu(self.root, tearoff=0, bg=BG_WINDOW, fg=TEXT_WHITE,
-                            activebackground=ACCENT_BLUE, activeforeground=TEXT_WHITE,
-                            font=(UI_FONT, 10))
-        card_menu.add_command(label="Показать кнопку управления", command=self.show_overlay)
-        card_menu.add_command(label="История", command=self.show_history_window)
-        card_menu.add_separator()
-        if self.shift_pressed:
-            card_menu.add_command(label="Выход", command=self.on_exit)
-        else:
-            card_menu.add_command(label="Скрыть кнопку управления", command=self.hide_overlay)
-            
-        card_menu.post(event.x_root, event.y_root)
+        self._close_card_menu()
+        self.card_menu.delete(0, "end")
+        self.card_menu.add_command(label="Показать кнопку управления", command=self.show_overlay)
+        self.card_menu.add_separator()
+        
+        self.card_menu.add_command(label="История", command=self.show_history_window)
+        self.card_menu.add_separator()
+        
+        sound_label = "Выключить звук" if self.sound_enabled else "Включить звук"
+        self.card_menu.add_command(label=sound_label, command=self.toggle_sound)
+        self.card_menu.add_separator()
+        
+        self.card_menu.add_command(label="Скрыть кнопку управления", command=self.hide_overlay)
+        self.card_menu.add_separator()
+        
+        self.card_menu.add_command(label="Выход", command=self.on_exit, foreground="red")
+        
+        self.card_menu.bind("<Unmap>", lambda e: self._on_card_menu_unmap())
+        self.card_menu.bind("<Button-1>", self._check_card_menu_click)
+        self.card_menu.bind("<Button-2>", self._check_card_menu_click)
+        self.card_menu.bind("<Button-3>", self._check_card_menu_click)
+        
+        self.card_menu.post(event.x_root, event.y_root)
+        try:
+            self.card_menu.grab_set()
+        except Exception:
+            pass
+
+    def _on_card_menu_unmap(self):
+        try:
+            self.card_menu.grab_release()
+        except Exception:
+            pass
+
+    def _check_card_menu_click(self, event):
+        w = self.card_menu.winfo_width()
+        h = self.card_menu.winfo_height()
+        if event.x < 0 or event.y < 0 or event.x > w or event.y > h:
+            self._close_card_menu()
+            return "break"
 
     def _on_db_status_changed(self, is_connected: bool, status_msg: str):
         """Обновляет статус подключения потокобезопасно через очередь."""
@@ -834,7 +922,13 @@ class NotifierApp:
     # --- Завершение ---
 
     def on_exit(self, icon=None, item=None):
-        """Корректное завершение работы."""
+        """Корректное завершение работы с подтверждением."""
+        self._close_context_menu()
+        self._close_card_menu()
+        
+        if not messagebox.askyesno("Выход", "Вы действительно хотите закрыть Teragis Notifier?"):
+            return
+            
         log_debug("main.py: Завершение работы приложения...")
         try:
             self.db_listener.stop()
