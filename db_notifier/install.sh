@@ -4,9 +4,20 @@ set -e
 
 echo "=== Установка системных зависимостей (требуются права sudo) ==="
 sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-tk
+sudo apt-get install -y python3 python3-pip python3-tk python3-dev libpq-dev build-essential libjpeg-dev zlib1g-dev
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Определение структуры каталогов (из репозитория или из распакованного дистрибутива)
+if [ -f "$SRC_DIR/tnotif.py" ]; then
+    # Скрипт запущен внутри самой папки db_notifier
+    DB_NOTIFIER_SRC="$SRC_DIR"
+    SCRIPTS_SRC="$SRC_DIR"
+else
+    # Скрипт запущен из корня дистрибутива, где db_notifier — подпапка
+    DB_NOTIFIER_SRC="$SRC_DIR/db_notifier"
+    SCRIPTS_SRC="$SRC_DIR"
+fi
 
 echo "=== Определение пути к Рабочему столу ==="
 DESKTOP_DIR=$(xdg-user-dir DESKTOP 2>/dev/null || echo "")
@@ -24,8 +35,9 @@ echo "=== Создание рабочей директории на Рабоче
 mkdir -p "$INSTALL_DIR"
 
 echo "=== Копирование файлов приложения ==="
-cp -rf "$SRC_DIR/db_notifier" "$INSTALL_DIR/"
-cp -f "$SRC_DIR/start.sh" "$SRC_DIR/autostart.sh" "$SRC_DIR/uninstall.sh" "$SRC_DIR/instruction.txt" "$INSTALL_DIR/"
+mkdir -p "$INSTALL_DIR/db_notifier"
+cp -rf "$DB_NOTIFIER_SRC"/. "$INSTALL_DIR/db_notifier/"
+cp -f "$SCRIPTS_SRC/start.sh" "$SCRIPTS_SRC/autostart.sh" "$SCRIPTS_SRC/uninstall.sh" "$SCRIPTS_SRC/instruction.txt" "$INSTALL_DIR/"
 
 echo "=== Установка Python-библиотек в пространство пользователя ==="
 pip3 install --user -r "$INSTALL_DIR/db_notifier/requirements.txt" --break-system-packages 2>/dev/null || pip3 install --user -r "$INSTALL_DIR/db_notifier/requirements.txt"

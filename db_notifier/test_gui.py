@@ -37,7 +37,7 @@ class TestNotifierApp(NotifierApp):
         def add_next(idx):
             if idx < len(notifications):
                 fio, details = notifications[idx]
-                print(f"[TEST] Добавление уведомления {idx + 1}/{len(notifications)}: {fio}")
+                print("[TEST] Добавление уведомления {}/{}: {}".format(idx + 1, len(notifications), fio))
                 self.event_queue.put({"fio": fio, "details": details})
                 self.root.after(1500, lambda: add_next(idx + 1))
             else:

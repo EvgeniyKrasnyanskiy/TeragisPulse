@@ -863,14 +863,18 @@ class NotifierApp:
                             if os.path.exists(sound_file):
                                 subprocess.run(
                                     [player, sound_file],
-                                    timeout=5, capture_output=True
+                                    timeout=5,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE
                                 )
                                 return
 
                     # Фолбек: BEL-символ через терминал
                     subprocess.run(
                         ["bash", "-c", "printf '\\a'"],
-                        timeout=2, capture_output=True
+                        timeout=2,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
                     )
             except Exception:
                 pass

@@ -141,10 +141,11 @@ async def scan_port(ip, port, timeout=0.5):
     try:
         reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
         writer.close()
-        try:
-            await writer.wait_closed()
-        except Exception:
-            pass
+        if hasattr(writer, 'wait_closed'):
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
         return ip
     except Exception:
         return None
