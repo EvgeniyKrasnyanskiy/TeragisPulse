@@ -1,10 +1,6 @@
 #!/bin/bash
-# Скрипт установки Teragis Notifier на Linux (Xubuntu)
+# Скрипт установки Teragis Notifier на Linux (Xubuntu) БЕЗ установки зависимостей и библиотек
 set -e
-
-echo "=== Установка системных зависимостей (требуются права sudo) ==="
-sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-tk python3-dev libpq-dev build-essential
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -45,9 +41,6 @@ if [ -f "$SCRIPTS_SRC/.env" ]; then
     echo "=== Копирование конфигурационного файла .env ==="
     cp -f "$SCRIPTS_SRC/.env" "$INSTALL_DIR/db_notifier/"
 fi
-
-echo "=== Установка Python-библиотек в пространство пользователя ==="
-pip3 install --user -r "$INSTALL_DIR/db_notifier/requirements.txt" --break-system-packages 2>/dev/null || pip3 install --user -r "$INSTALL_DIR/db_notifier/requirements.txt"
 
 echo "=== Настройка прав выполнения ==="
 chmod +x "$INSTALL_DIR/start.sh" "$INSTALL_DIR/autostart.sh" "$INSTALL_DIR/uninstall.sh"
