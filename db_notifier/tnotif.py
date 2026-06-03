@@ -452,28 +452,18 @@ class NotifierApp:
         self.menu.add_command(label="Выход", command=self.on_exit, foreground="red")
         
         self.menu.bind("<Unmap>", lambda e: self._on_menu_unmap())
-        self.menu.bind("<Button-1>", self._check_menu_click)
-        self.menu.bind("<Button-2>", self._check_menu_click)
-        self.menu.bind("<Button-3>", self._check_menu_click)
+        self.menu.bind("<FocusOut>", lambda e: self._close_context_menu())
         
-        self.menu.post(event.x_root, event.y_root)
         try:
-            self.menu.grab_set()
-        except Exception:
-            pass
+            self.menu.tk_popup(event.x_root, event.y_root)
+        except Exception as e:
+            log_debug("main.py: Ошибка tk_popup для контекстного меню: {}".format(e))
 
     def _on_menu_unmap(self):
         try:
             self.menu.grab_release()
         except Exception:
             pass
-
-    def _check_menu_click(self, event):
-        w = self.menu.winfo_width()
-        h = self.menu.winfo_height()
-        if event.x < 0 or event.y < 0 or event.x > w or event.y > h:
-            self._close_context_menu()
-            return "break"
 
     def _close_card_menu(self):
         try:
@@ -504,28 +494,18 @@ class NotifierApp:
         self.card_menu.add_command(label="Выход", command=self.on_exit, foreground="red")
         
         self.card_menu.bind("<Unmap>", lambda e: self._on_card_menu_unmap())
-        self.card_menu.bind("<Button-1>", self._check_card_menu_click)
-        self.card_menu.bind("<Button-2>", self._check_card_menu_click)
-        self.card_menu.bind("<Button-3>", self._check_card_menu_click)
+        self.card_menu.bind("<FocusOut>", lambda e: self._close_card_menu())
         
-        self.card_menu.post(event.x_root, event.y_root)
         try:
-            self.card_menu.grab_set()
-        except Exception:
-            pass
+            self.card_menu.tk_popup(event.x_root, event.y_root)
+        except Exception as e:
+            log_debug("main.py: Ошибка tk_popup для меню настроек карточки: {}".format(e))
 
     def _on_card_menu_unmap(self):
         try:
             self.card_menu.grab_release()
         except Exception:
             pass
-
-    def _check_card_menu_click(self, event):
-        w = self.card_menu.winfo_width()
-        h = self.card_menu.winfo_height()
-        if event.x < 0 or event.y < 0 or event.x > w or event.y > h:
-            self._close_card_menu()
-            return "break"
 
     def _on_db_status_changed(self, is_connected: bool, status_msg: str):
         """Обновляет статус подключения потокобезопасно через очередь."""
@@ -663,8 +643,8 @@ class NotifierApp:
 
             if not is_win:
                 # На X11/Linux для overrideredirect окон крайне важен порядок:
-                # сначала устанавливаем геометрию, затем отображаем через deiconify.
-                # Функция overrideredirect(True) уже вызвана при создании Toplevel.
+                # сначала скрываем, устанавливаем геометрию, затем отображаем через deiconify.
+                container.withdraw()
                 container.geometry("{}x{}+{}+{}".format(self.card_width, total_h, x, y))
                 container.deiconify()
                 try:
