@@ -14,7 +14,7 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from auto_discovery import discover_db_host, get_db_credentials, log_debug
+from auto_discovery import discover_db_host, get_db_credentials, log_debug, mask_fio
 from identification import identification_func
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,8 @@ class DBListener(threading.Thread):
                     dbname=self._creds['dbname'],
                     user=self._creds['user'],
                     password=self._creds['password'],
-                    port=self._creds['port']
+                    port=self._creds['port'],
+                    sslmode='prefer'
                 )
                 conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 cursor = conn.cursor()
@@ -167,7 +168,7 @@ class DBListener(threading.Thread):
             "details": details
         }
         
-        log_debug("Сформировано GUI событие: FIO={}, Details={}".format(fio, details_list))
+        log_debug("Сформировано GUI событие: FIO={}, Details={}".format(mask_fio(fio), details_list))
         self.event_queue.put(event)
 
 

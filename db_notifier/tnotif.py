@@ -18,10 +18,6 @@ from tkinter import font as tkfont
 from PIL import Image, ImageDraw
 
 is_win = os.name == 'nt'
-if is_win:
-    import pystray
-else:
-    pystray = None
 
 try:
     import winsound
@@ -72,7 +68,7 @@ logging.basicConfig(
 logger = logging.getLogger("db_notifier")
 
 from db_listener import DBListener
-from auto_discovery import log_debug
+from auto_discovery import log_debug, mask_fio
 
 # Цветовая палитра (темная тема)
 BG_CARD = "#1E1E1E"
@@ -103,7 +99,7 @@ UI_FONT = _detect_ui_font()
 class NotificationCard(tk.Frame):
     """Виджет отдельной карточки уведомления (чистый tkinter)."""
 
-    def __init__(self, master, fio: str, details: str, on_close_callback, width=400, **kwargs):
+    def __init__(self, master, fio: str, details: str, on_close_callback, on_settings_callback, width=400, **kwargs):
         super().__init__(
             master,
             bg=BG_CARD,
@@ -115,6 +111,7 @@ class NotificationCard(tk.Frame):
             **kwargs
         )
         self.on_close_callback = on_close_callback
+        self.on_settings_callback = on_settings_callback
         self._closed = False
         self.pack_propagate(False)
 
@@ -158,6 +155,17 @@ class NotificationCard(tk.Frame):
         close_btn.bind("<Enter>", lambda e: close_btn.config(fg=TEXT_WHITE))
         close_btn.bind("<Leave>", lambda e: close_btn.config(fg=TEXT_MUTED))
 
+        # Кнопка настроек «⚙»
+        settings_btn = tk.Label(
+            self, text="⚙",
+            bg=BG_CARD, fg=TEXT_MUTED,
+            font=(UI_FONT, 12), cursor="hand2"
+        )
+        settings_btn.place(relx=1.0, rely=0.0, anchor="ne", x=-30, y=6)
+        settings_btn.bind("<Button-1>", self.on_settings_callback)
+        settings_btn.bind("<Enter>", lambda e: settings_btn.config(fg=TEXT_WHITE))
+        settings_btn.bind("<Leave>", lambda e: settings_btn.config(fg=TEXT_MUTED))
+
     def close(self):
         """Немедленное удаление карточки."""
         if self._closed:
@@ -197,18 +205,13 @@ class NotifierApp:
         # Хранилище истории уведомлений за текущие сутки
         self.history = []
 
-        # Трей и управление окнами в зависимости от ОС
-        self.tray_icon = None
         self.cards_window = None
+        self.overlay = None
+        self.drag_data = {"x": 0, "y": 0, "dragged": False}
+        self.shift_pressed = False
 
-        if is_win:
-            self._init_tray()
-        else:
-            log_debug("main.py: Вызов _init_linux_dashboard...")
-            self._init_linux_dashboard()
-            self.root.deiconify()  # Показываем полностью настроенное окно
-            self.root.update_idletasks()
-            log_debug("main.py: _init_linux_dashboard успешно завершен!")
+        log_debug("main.py: Вызов _init_overlay...")
+        self._init_overlay()
 
         # Прослушивание БД
         log_debug("main.py: Создание DBListener...")
@@ -224,182 +227,231 @@ class NotifierApp:
         self.root.after(100, self._poll_events)
         log_debug("main.py: Инициализация NotifierApp завершена успешно")
 
-    def _init_linux_dashboard(self) -> None:
-        """Сверхупрощённая и стабильная версия пульта управления для старого Xubuntu (Xfce 4.12)."""
-        log_debug("main.py: Инициализация Linux-пульта (упрощённая версия)...")
-        self.root.title("Teragis Notifier")
-        self.root.configure(bg=BG_WINDOW)
-
-        # Простой заголовок
-        log_debug("Linux-пульт: Создание title_label...")
-        title_label = tk.Label(
-            self.root,
-            text="Teragis Pulse Notifier",
-            bg=BG_WINDOW,
-            fg=TEXT_WHITE,
-            font=(UI_FONT, 14, "bold"),
-            pady=12
-        )
-        title_label.pack()
-
-        # Статус-фрейм (без highlight-эффектов, вызывающих зависание)
-        log_debug("Linux-пульт: Создание status_frame...")
-        status_frame = tk.Frame(self.root, bg=BG_CARD)
-        status_frame.pack(fill="x", padx=20, pady=8)
-
-        # Текст статуса подключения с начальным эмодзи
-        log_debug("Linux-пульт: Создание status_label...")
-        self.status_label = tk.Label(
-            status_frame,
-            text="[ ... ] Инициализация...",
-            bg=BG_CARD,
-            fg=TEXT_GREY,
-            font=(UI_FONT, 10),
-            anchor="center"
-        )
-        self.status_label.pack(fill="x", expand=True, pady=10, padx=15)
-
-        # Кнопки
-        log_debug("Linux-пульт: Создание btn_history...")
-        history_btn_text = "🕒 История за сегодня" if is_win else "История за сегодня"
-        btn_history = tk.Button(
-            self.root,
-            text=history_btn_text,
-            bg=ACCENT_BLUE,
-            fg=TEXT_WHITE,
-            activebackground=HOVER_DARK,
-            activeforeground=TEXT_WHITE,
-            font=(UI_FONT, 10, "bold"),
-            bd=0,
-            cursor="hand2",
-            command=self.show_history_window
-        )
-        btn_history.pack(fill="x", padx=20, pady=(10, 5), ipady=5)
-
-        log_debug("Linux-пульт: Создание btn_exit...")
-        exit_btn_text = "🚪 Выход" if is_win else "Выход"
-        btn_exit = tk.Button(
-            self.root,
-            text=exit_btn_text,
-            bg="#444444",
-            fg=TEXT_WHITE,
-            activebackground="#666666",
-            activeforeground=TEXT_WHITE,
-            font=(UI_FONT, 10, "bold"),
-            bd=0,
-            cursor="hand2",
-            command=self.on_exit
-        )
-        btn_exit.pack(fill="x", padx=20, pady=5, ipady=5)
-
-        # Обработка закрытия окна крестиком
-        log_debug("Linux-пульт: Настройка WM_DELETE_WINDOW...")
-        self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
-
-        # Размеры и центрирование с защитой
-        self.root.update_idletasks()  # Критично для старого Tkinter
+    def _init_overlay(self) -> None:
+        """Инициализация плавающей кнопки управления (оверлея)."""
+        log_debug("main.py: Создание оверлея...")
+        self.overlay = tk.Toplevel(self.root)
+        self.overlay.overrideredirect(True)
+        self.overlay.attributes("-topmost", True)
+        self.overlay.configure(bg=BG_WINDOW)
         
-        win_w = 340
-        win_h = 230
-        
-        log_debug("Linux-пульт: Определение размеров экрана...")
+        # Разрешаем прозрачность если поддерживается
         try:
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
-        except Exception as e:
-            log_debug("Linux-пульт: Ошибка получения разрешения экрана, используем фолбек: {}".format(e))
-            sw, sh = 1920, 1080
-
-        x = (sw - win_w) // 2
-        y = (sh - win_h) // 2
-        
-        log_debug("Linux-пульт: Установка геометрии {}x{}+{}+{}...".format(win_w, win_h, x, y))
-        self.root.geometry("{}x{}+{}+{}".format(win_w, win_h, x, y))
-        self.root.resizable(False, False)
-        log_debug("Linux-пульт: Инициализация успешно завершена!")
-
-    # --- Трей ---
-
-    def _create_tray_image(self) -> Image.Image:
-        """Генерирует изображение для иконки трея."""
-        img_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "tray_icon.png")
-        if os.path.exists(img_path):
-            try:
-                return Image.open(img_path)
-            except Exception:
-                pass
-        image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(image)
-        draw.ellipse([4, 4, 60, 60], outline=ACCENT_BLUE, width=5)
-        draw.ellipse([16, 16, 48, 48], fill=ACCENT_BLUE)
-        draw.ellipse([26, 26, 38, 38], fill="#4CAF50")
-        try:
-            os.makedirs(os.path.dirname(img_path), exist_ok=True)
-            image.save(img_path)
+            self.overlay.attributes("-alpha", 0.95)
         except Exception:
             pass
-        return image
 
-    def _init_tray(self):
-        """Запускает системный трей в отдельном потоке."""
-        log_debug("main.py: Запуск фонового трея...")
+        self.overlay_canvas = tk.Canvas(self.overlay, width=40, height=40, bg=BG_WINDOW, highlightthickness=0)
+        self.overlay_canvas.pack()
 
-        def tray_worker():
+        # Овал статуса и текст
+        self.overlay_circle = self.overlay_canvas.create_oval(2, 2, 38, 38, fill=BG_CARD, outline=ACCENT_BLUE, width=2)
+        self.overlay_text = self.overlay_canvas.create_text(20, 20, text="T", fill=TEXT_WHITE, font=(UI_FONT, 14, "bold"))
+
+        # Биндинги
+        self.overlay_canvas.bind("<Button-1>", self._on_overlay_click)
+        self.overlay_canvas.bind("<ButtonRelease-1>", self._on_overlay_release)
+        self.overlay_canvas.bind("<B1-Motion>", self._on_overlay_drag)
+        self.overlay_canvas.bind("<Button-3>", self._show_context_menu)
+        
+        self.overlay_canvas.bind("<Enter>", self._on_overlay_enter)
+        self.overlay_canvas.bind("<Leave>", self._on_overlay_leave)
+
+        # Глобальные биндинги Shift
+        self.root.bind_all("<KeyPress-Shift_L>", self._on_shift_press)
+        self.root.bind_all("<KeyRelease-Shift_L>", self._on_shift_release)
+        self.root.bind_all("<KeyPress-Shift_R>", self._on_shift_press)
+        self.root.bind_all("<KeyRelease-Shift_R>", self._on_shift_release)
+
+        # Горячие клавиши
+        self.root.bind_all("<Control-Shift-Key-H>", lambda e: self.toggle_overlay())
+        self.root.bind_all("<Control-Shift-Key-Q>", lambda e: self.on_exit())
+
+        # Позиционирование
+        coords = self._get_cached_coords()
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        if coords:
+            x, y = coords
+            if x < 0 or x > sw - 40: x = (sw - 40) // 2
+            if y < 0 or y > sh - 40: y = 35
+        else:
+            x = (sw - 40) // 2
+            y = 35
+            
+        self.overlay.geometry(f"40x40+{x}+{y}")
+        self.overlay_status_msg = "Инициализация..."
+        self.tooltip_window = None
+
+    def _get_cached_coords(self):
+        try:
+            cache_dir = os.path.expanduser('~/.config/teragis_notifier')
+            if is_win:
+                cache_dir = os.path.join(os.environ.get('APPDATA', ''), 'teragis_notifier')
+            cache_file = os.path.join(cache_dir, 'overlay.cache')
+            if os.path.exists(cache_file):
+                import json
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('x'), data.get('y')
+        except Exception:
+            pass
+        return None
+
+    def _set_cached_coords(self, x, y):
+        try:
+            cache_dir = os.path.expanduser('~/.config/teragis_notifier')
+            if is_win:
+                cache_dir = os.path.join(os.environ.get('APPDATA', ''), 'teragis_notifier')
+            os.makedirs(cache_dir, exist_ok=True)
+            cache_file = os.path.join(cache_dir, 'overlay.cache')
+            import json
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump({'x': x, 'y': y}, f)
+            if not is_win:
+                try:
+                    os.chmod(cache_file, 0o600)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _on_overlay_click(self, event):
+        self.drag_data["x"] = event.x
+        self.drag_data["y"] = event.y
+        self.drag_data["dragged"] = False
+
+    def _on_overlay_release(self, event):
+        if not self.drag_data.get("dragged", False):
+            self._show_context_menu(event)
+
+    def _on_overlay_drag(self, event):
+        self.drag_data["dragged"] = True
+        deltax = event.x - self.drag_data["x"]
+        deltay = event.y - self.drag_data["y"]
+        x = self.overlay.winfo_x() + deltax
+        y = self.overlay.winfo_y() + deltay
+
+        sw = self.overlay.winfo_screenwidth()
+        sh = self.overlay.winfo_screenheight()
+
+        if x < 0: x = 0
+        if x > sw - 40: x = sw - 40
+        if y < 0: y = 0
+        if y > sh - 40: y = sh - 40
+
+        self.overlay.geometry(f"40x40+{x}+{y}")
+        self._set_cached_coords(x, y)
+        self._hide_tooltip()
+
+    def _on_overlay_enter(self, event):
+        self.overlay_canvas.itemconfig(self.overlay_circle, outline="#3a7ebd")
+        self._show_tooltip(event)
+
+    def _on_overlay_leave(self, event):
+        self._update_circle_color()
+        self._hide_tooltip()
+
+    def _update_circle_color(self):
+        status = self.overlay_status_msg
+        if "Подключено" in status:
+            color = "#4CAF50" # Зеленый
+        elif "Сбой" in status or "не найден" in status:
+            color = "#F44336" # Красный
+        else:
+            color = "#FFC107" # Оранжевый/Желтый
+        self.overlay_canvas.itemconfig(self.overlay_circle, outline=color)
+
+    def _show_tooltip(self, event):
+        self._hide_tooltip()
+        self.tooltip_window = tk.Toplevel(self.overlay)
+        self.tooltip_window.overrideredirect(True)
+        self.tooltip_window.attributes("-topmost", True)
+        self.tooltip_window.configure(bg="#222222")
+        
+        lbl = tk.Label(self.tooltip_window, text=self.overlay_status_msg, bg="#222222", fg=TEXT_WHITE, font=(UI_FONT, 9), padx=6, pady=4, bd=1, relief="solid")
+        lbl.pack()
+        
+        # Позиционируем чуть ниже оверлея
+        x = self.overlay.winfo_x() + 20 - (lbl.winfo_reqwidth() // 2)
+        y = self.overlay.winfo_y() + 45
+        self.tooltip_window.geometry(f"+{x}+{y}")
+
+    def _hide_tooltip(self):
+        if self.tooltip_window:
             try:
-                image = self._create_tray_image()
-                is_linux = platform.system() == "Linux"
-                
-                menu_history_text = "Today's History" if is_linux else 'История за сегодня'
-                menu_exit_text = 'Exit' if is_linux else 'Выход'
-                title_text = "Teragis Notifier: Searching..." if is_linux else "Teragis Notifier: Поиск сервера..."
-                
-                menu = pystray.Menu(
-                    pystray.MenuItem(menu_history_text, self._show_history_from_tray),
-                    pystray.MenuItem(menu_exit_text, self.on_exit)
-                )
-                self.tray_icon = pystray.Icon(
-                    "TeragisNotifier", image,
-                    title_text, menu
-                )
-                self.tray_icon.run()
-            except Exception as err:
-                log_debug("main.py: Ошибка в потоке трея: {}".format(err))
+                self.tooltip_window.destroy()
+            except Exception:
+                pass
+            self.tooltip_window = None
 
-        threading.Thread(target=tray_worker, daemon=True).start()
+    def _on_shift_press(self, event):
+        self.shift_pressed = True
+
+    def _on_shift_release(self, event):
+        self.shift_pressed = False
+
+    def hide_overlay(self):
+        if self.overlay:
+            self.overlay.withdraw()
+
+    def show_overlay(self):
+        if self.overlay:
+            self.overlay.deiconify()
+            self.overlay.lift()
+
+    def toggle_overlay(self):
+        if self.overlay:
+            if self.overlay.winfo_viewable():
+                self.hide_overlay()
+            else:
+                self.show_overlay()
+
+    def _show_context_menu(self, event):
+        self.menu = tk.Menu(self.overlay, tearoff=0, bg=BG_WINDOW, fg=TEXT_WHITE,
+                            activebackground=ACCENT_BLUE, activeforeground=TEXT_WHITE,
+                            font=(UI_FONT, 10))
+        
+        self.menu.add_command(label="История", command=self.show_history_window)
+        self.menu.add_separator()
+        
+        if self.shift_pressed:
+            self.menu.add_command(label="Выход", command=self.on_exit)
+        else:
+            self.menu.add_command(label="Скрыть", command=self.hide_overlay)
+            
+        self.menu.post(event.x_root, event.y_root)
+
+    def _show_card_settings_menu(self, event):
+        card_menu = tk.Menu(self.root, tearoff=0, bg=BG_WINDOW, fg=TEXT_WHITE,
+                            activebackground=ACCENT_BLUE, activeforeground=TEXT_WHITE,
+                            font=(UI_FONT, 10))
+        card_menu.add_command(label="Показать кнопку управления", command=self.show_overlay)
+        card_menu.add_command(label="История", command=self.show_history_window)
+        card_menu.add_separator()
+        if self.shift_pressed:
+            card_menu.add_command(label="Выход", command=self.on_exit)
+        else:
+            card_menu.add_command(label="Скрыть кнопку управления", command=self.hide_overlay)
+            
+        card_menu.post(event.x_root, event.y_root)
 
     def _on_db_status_changed(self, is_connected: bool, status_msg: str):
         """Обновляет статус подключения потокобезопасно через очередь."""
         self.status_queue.put((is_connected, status_msg))
 
     def _update_status_ui(self, is_connected: bool, status_msg: str):
-        """Обновляет подсказку иконки трея или виджеты пульта управления на Linux."""
-        if is_win:
-            if self.tray_icon:
-                self.tray_icon.title = "Teragis Notifier: {}".format(status_msg)
-        else:
-            if not hasattr(self, 'status_label'):
-                return
-            
-            # Определяем текстовый маркер статуса
-            if is_connected:
-                status_prefix = "[ OK ]"
-            elif "Сбой" in status_msg or "не найден" in status_msg:
-                status_prefix = "[ СБОЙ ]"
-            elif "Подключение" in status_msg or "Поиск" in status_msg:
-                status_prefix = "[ ПОИСК ]"
-            else:
-                status_prefix = "[ ... ]"
-            
-            # Обновляем текст статуса подключения вместе с префиксом
-            self.status_label.config(text="{} {}".format(status_prefix, status_msg))
+        """Обновляет подсказку и цвет оверлея."""
+        self.overlay_status_msg = status_msg
+        self._update_circle_color()
 
     # --- Карточки уведомлений ---
 
-    def add_notification(self, fio: str, details: str):
+    def add_notification(self, fio: str, details: str, timeout_ms=300000):
         """Добавляет новое уведомление сверху стека."""
         fio = clean_emojis(fio)
         details = clean_emojis(details)
-        log_debug("main.py: Добавление уведомления для {}...".format(fio))
+        log_debug("main.py: Добавление уведомления для {}...".format(mask_fio(fio)))
         try:
             # Строгий лимит ротации: не более 5 карточек одновременно
             while len(self.cards) >= 5:
@@ -437,12 +489,13 @@ class NotifierApp:
             card = NotificationCard(
                 container, fio=fio, details=details,
                 on_close_callback=self._remove_card,
+                on_settings_callback=self._show_card_settings_menu,
                 width=self.card_width
             )
             self.cards.insert(0, card)
             
-            # Автозакрытие карточки по таймеру ровно через 5 минут (300 000 мс)
-            self.root.after(300000, lambda c=card: self._safe_close_card(c))
+            # Автозакрытие карточки по таймеру
+            self.root.after(timeout_ms, lambda c=card: self._safe_close_card(c))
             
             log_debug("main.py: Карточка создана и добавлена в список")
             self._repack_cards()
@@ -478,8 +531,11 @@ class NotifierApp:
             # Удаляем визуальное представление всех дочерних, которые не в self.cards
             if container and container.winfo_exists():
                 for c in container.winfo_children():
-                    if c not in self.cards:
-                        c.pack_forget()
+                    if c not in self.cards and isinstance(c, NotificationCard):
+                        try:
+                            c.pack_forget()
+                        except Exception:
+                            pass
 
             if not self.cards:
                 log_debug("main.py: Нет карточек — скрываем окно")
@@ -545,11 +601,6 @@ class NotifierApp:
         except Exception as e:
             log_debug("main.py: Ошибка при очистке старой истории: {}".format(e))
 
-    def _show_history_from_tray(self, icon=None, item=None):
-        """Метод вызывается из потока трея для открытия окна истории в потоке Tkinter."""
-        log_debug("main.py: Запрос открытия истории из трея")
-        self.root.after(0, self.show_history_window)
-
     def show_history_window(self):
         """Отображает стильное окно с историей уведомлений за сегодня."""
         log_debug("main.py: Открытие окна истории уведомлений...")
@@ -603,15 +654,24 @@ class NotifierApp:
             canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=win_w - 50)
             canvas.configure(yscrollcommand=scrollbar.set)
 
-            # Привязка прокрутки колесиком мыши
+            # Привязка прокрутки колесиком мыши (совместимо с Windows и Linux)
             def _on_mousewheel(event):
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+                if event.num == 4:
+                    canvas.yview_scroll(-1, "units")
+                elif event.num == 5:
+                    canvas.yview_scroll(1, "units")
+                else:
+                    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+            def bind_mousewheel(widget):
+                widget.bind("<MouseWheel>", _on_mousewheel)
+                widget.bind("<Button-4>", _on_mousewheel)
+                widget.bind("<Button-5>", _on_mousewheel)
+                for child in widget.winfo_children():
+                    bind_mousewheel(child)
             
             # Отвязка прокрутки при закрытии окна
             def _on_close_history():
-                canvas.unbind_all("<MouseWheel>")
                 history_win.destroy()
 
             history_win.protocol("WM_DELETE_WINDOW", _on_close_history)
@@ -669,6 +729,9 @@ class NotifierApp:
                         font=(UI_FONT, 9), anchor="w", justify="left"
                     ).pack(fill="x", pady=(4, 0))
 
+            # Рекурсивно биндим прокрутку ко всем элементам внутри canvas
+            bind_mousewheel(canvas)
+
             # Кнопка закрытия внизу
             btn_frame = tk.Frame(history_win, bg=BG_WINDOW, pady=10)
             btn_frame.pack(fill="x")
@@ -688,14 +751,10 @@ class NotifierApp:
 
     def _play_notification_sound(self) -> None:
         """Воспроизводит короткий звуковой сигнал (кроссплатформенно)."""
-        if not is_win:
-            # На Linux звук должен быть полностью отключен (тихий режим)
-            return
-
         def _sound_worker():
             try:
                 # Windows: winsound.Beep через системный спикер
-                if winsound:
+                if is_win and winsound:
                     winsound.Beep(2000, 150)
                     return
 
@@ -739,16 +798,19 @@ class NotifierApp:
         try:
             # Опрашиваем очередь изменения статусов БД
             last_status = None
+            status_count = 0
             while True:
                 try:
                     last_status = self.status_queue.get_nowait()
+                    status_count += 1
                 except queue.Empty:
                     break
             
             if last_status is not None:
                 is_connected, status_msg = last_status
                 self._update_status_ui(is_connected, status_msg)
-                self.status_queue.task_done()
+                for _ in range(status_count):
+                    self.status_queue.task_done()
         except Exception as e:
             log_debug("main.py: Ошибка при обработке очереди статусов: {}".format(e))
 
@@ -758,7 +820,7 @@ class NotifierApp:
                 event = self.event_queue.get_nowait()
                 fio = event.get('fio')
                 details = event.get('details')
-                log_debug("main.py: Извлечено событие из очереди для FIO={}".format(fio))
+                log_debug("main.py: Извлечено событие из очереди для FIO={}".format(mask_fio(fio)))
                 self.add_notification(fio, details)
                 self._play_notification_sound()
                 self.event_queue.task_done()
@@ -778,9 +840,10 @@ class NotifierApp:
             self.db_listener.stop()
         except Exception:
             pass
-        if self.tray_icon:
+        self._hide_tooltip()
+        if self.overlay:
             try:
-                self.tray_icon.stop()
+                self.overlay.destroy()
             except Exception:
                 pass
         try:

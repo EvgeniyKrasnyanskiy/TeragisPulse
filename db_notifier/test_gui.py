@@ -47,39 +47,9 @@ class TestNotifierApp(NotifierApp):
 
         add_next(0)
 
-    def add_notification(self, fio: str, details: str):
+    def add_notification(self, fio: str, details: str, timeout_ms=15000):
         """Переопределенный метод для теста (автозакрытие 15 секунд вместо 5 минут)."""
-        try:
-            # Строгий лимит ротации: не более 5 карточек одновременно
-            while len(self.cards) >= 5:
-                oldest_card = self.cards[-1]
-                print(f"[TEST] Превышен лимит ротации (всего {len(self.cards)}). Удаляем старую карточку: {oldest_card.winfo_children()[1].winfo_children()[1].cget('text')}")
-                oldest_card.close()
-
-            # Добавляем в историю уведомлений
-            event_time = time.strftime('%H:%M:%S')
-            event_date = time.strftime('%Y-%m-%d')
-            self.history.append({
-                "time": event_time,
-                "date": event_date,
-                "fio": fio,
-                "details": details
-            })
-            self._clean_old_history()
-
-            card = NotificationCard(
-                self.root, fio=fio, details=details,
-                on_close_callback=self._remove_card,
-                width=self.card_width
-            )
-            self.cards.insert(0, card)
-            
-            # В тесте автозакрытие через 15 секунд!
-            self.root.after(15000, lambda c=card: self._safe_close_card(c))
-            
-            self._repack_cards()
-        except Exception as e:
-            print(f"[TEST ERROR] Ошибка при добавлении карточки: {e}")
+        super().add_notification(fio, details, timeout_ms=timeout_ms)
 
 if __name__ == '__main__':
     app = TestNotifierApp()

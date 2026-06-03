@@ -9,9 +9,6 @@ hiddenimports = ['identification']
 is_win = platform.system() == 'Windows'
 
 if is_win:
-    # Собираем pystray только под Windows
-    tmp_ret = collect_all('pystray')
-    datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
     # На Windows исключаем линуксовый site-packages, чтобы не было конфликтов PIL (ImportError _imaging)
     pathex_dirs = ['..']
 else:

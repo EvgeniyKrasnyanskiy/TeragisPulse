@@ -62,6 +62,20 @@ DEFAULT_DB_PORT = os.getenv('DB_PORT', '5432')
 CACHE_DIR = os.path.expanduser('~/.config/teragis_notifier')
 CACHE_FILE = os.path.join(CACHE_DIR, 'db_host.cache')
 
+def mask_fio(fio: str) -> str:
+    """Маскирует ФИО пациента для безопасности (например, ИВАНОВ ИВАН ИВАНОВИЧ -> ИВАНОВ И. И.)."""
+    if not fio:
+        return "НЕИЗВЕСТНЫЙ ПАЦИЕНТ"
+    try:
+        parts = fio.split()
+        if len(parts) >= 3:
+            return "{} {}. {}.".format(parts[0], parts[1][0], parts[2][0])
+        elif len(parts) == 2:
+            return "{} {}.".format(parts[0], parts[1][0])
+        return fio
+    except Exception:
+        return fio
+
 def get_db_credentials():
     """Возвращает реквизиты авторизации БД."""
     return {
@@ -83,11 +97,16 @@ def get_cached_host():
     return None
 
 def set_cached_host(host):
-    """Сохраняет работающий IP-адрес в кэш."""
+    """Сохраняет работающий IP-адрес в кэш с ограничением прав доступа."""
     try:
         os.makedirs(CACHE_DIR, exist_ok=True)
         with open(CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump({'host': host}, f)
+        if os.name != 'nt':
+            try:
+                os.chmod(CACHE_FILE, 0o600)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -106,14 +125,18 @@ def test_pg_connection(host, creds):
         log_debug("Успешное подключение к {}!".format(host))
         return True
     except Exception as e:
-        log_debug("Не удалось подключиться к {}. Ошибка: {}".format(host, e))
+        log_debug("Не удалось подключиться к {}. Ошибка скрыта для безопасности".format(host))
         return False
 
 async def scan_port(ip, port, timeout=0.5):
-    """Быстрая асинхронная проверка доступности TCP порта."""
+    """Быстрая асинхронная проверка доступности TCP порта с закрытием сокета."""
     try:
-        conn = asyncio.open_connection(ip, port)
-        await asyncio.wait_for(conn, timeout=timeout)
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
         return ip
     except Exception:
         return None
@@ -162,7 +185,7 @@ def discover_db_host():
     """
     log_debug("--- Запуск автоопределения сервера БД ---")
     creds = get_db_credentials()
-    log_debug("Используемые реквизиты авторизации: dbname={}, user={}, port={}".format(creds['dbname'], creds['user'], creds['port']))
+    log_debug("Используемые реквизиты авторизации: dbname={}, port={} (авторизация по паролю)".format(creds['dbname'], creds['port']))
     
     # 1. Проверяем хост, прописанный в .env (наивысший приоритет)
     env_host = os.getenv('DB_HOST')
