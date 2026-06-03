@@ -58,6 +58,8 @@ class DBListener(threading.Thread):
             if self.on_status_change:
                 self.on_status_change(False, "Подключение...")
 
+            conn = None
+            cursor = None
             # 2. Подключение к БД
             try:
                 conn = psycopg2.connect(
@@ -81,26 +83,39 @@ class DBListener(threading.Thread):
 
                 # 3. Цикл ожидания событий (надежный опрос сокета, совместимый с Windows)
                 while not self._stop_event.is_set():
-                    conn.poll()
-                    
-                    while conn.notifies:
-                        notify = conn.notifies.pop(0)
-                        try:
-                            notif_data = json.loads(notify.payload)
-                            log_debug("Получено NOTIFY событие: {}".format(notif_data))
-                            self._process_notification(cursor, notif_data)
-                        except Exception as parse_err:
-                            logger.error("[DBListener]: Ошибка парсинга события: {}".format(parse_err))
-                            log_debug("Ошибка обработки NOTIFY: {}".format(parse_err))
-                            
-                    # Пауза в 2 секунды (точно так же как в teragis_pulse.py!)
-                    time.sleep(2.0)
-                            
+                    # Ожидаем активности на сокете до 2 секунд (не нагружая CPU холостыми poll)
+                    if select.select([conn], [], [], 2.0)[0]:
+                        conn.poll()
+                        
+                        while conn.notifies:
+                            notify = conn.notifies.pop(0)
+                            try:
+                                notif_data = json.loads(notify.payload)
+                                log_surname = notif_data.get('surname', '')
+                                log_forename = notif_data.get('forename', '')
+                                log_fio = "{} {}".format(log_surname, log_forename).strip()
+                                log_debug("Получено NOTIFY событие: series_id={}, fio={}".format(
+                                    notif_data.get('series_id'), mask_fio(log_fio)
+                                ))
+                                self._process_notification(cursor, notif_data)
+                            except Exception as parse_err:
+                                logger.error("[DBListener]: Ошибка парсинга события: {}".format(parse_err))
+                                log_debug("Ошибка обработки NOTIFY: {}".format(parse_err))
             except Exception as conn_err:
                 logger.error("[DBListener]: Ошибка соединения с БД: {}. Реконнект через {}с.".format(conn_err, reconnect_delay))
                 log_debug("Сбой соединения или LISTEN: {}".format(conn_err))
                 if self.on_status_change:
                     self.on_status_change(False, "Сбой связи")
+                if cursor:
+                    try:
+                        cursor.close()
+                    except Exception:
+                        pass
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
                 time.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 2, 60)
                 
@@ -124,7 +139,7 @@ class DBListener(threading.Thread):
 
         # Сборка подробной информации
         total_d = float(totaldose or 0)
-        frac_n = int(fractionsnumber or 1)
+        frac_n = max(1, int(fractionsnumber or 1))
         dose_step = round((total_d / frac_n), 2)
         
         # Получаем дату первого визита из tcalendar для "лечение с dd.mm.yyyy"

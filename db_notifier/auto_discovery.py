@@ -165,7 +165,10 @@ async def find_postgres_in_subnet(subnet_prefix, port, executor, creds):
         return None
 
     # Для найденных активных IP проверяем авторизацию Postgres (в пуле потоков, т.к. psycopg2 блокирующий)
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except AttributeError:
+        loop = asyncio.get_event_loop()
     for ip in active_ips:
         is_ok = await loop.run_in_executor(executor, test_pg_connection, ip, creds)
         if is_ok:
@@ -249,21 +252,23 @@ def discover_db_host():
     log_debug("-> Запускаем асинхронное сканирование подсети: {}0/24...".format(subnet_prefix))
     
     # Запуск асинхронного сканера
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        # Python 3.7+
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         with ThreadPoolExecutor(max_workers=10) as executor:
             found_host = loop.run_until_complete(
                 find_postgres_in_subnet(subnet_prefix, int(creds['port']), executor, creds)
             )
-        loop.close()
-        
-        if found_host:
-            set_cached_host(found_host)
-            return found_host
-    except Exception:
-        pass
+            if found_host:
+                set_cached_host(found_host)
+                return found_host
+    except Exception as e:
+        log_debug("Ошибка при сканировании подсети: {}".format(e))
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
 
     return None
 

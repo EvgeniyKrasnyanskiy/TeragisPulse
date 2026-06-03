@@ -262,9 +262,7 @@ class NotifierApp:
         self.overlay_canvas.bind("<Enter>", self._on_overlay_enter)
         self.overlay_canvas.bind("<Leave>", self._on_overlay_leave)
 
-        # Горячие клавиши
-        self.root.bind_all("<Control-Shift-Key-H>", lambda e: self.toggle_overlay())
-        self.root.bind_all("<Control-Shift-Key-Q>", lambda e: self.on_exit())
+
 
         # Создаем меню один раз
         self.menu = tk.Menu(self.overlay, tearoff=0, bg=BG_WINDOW, fg=TEXT_WHITE,
@@ -886,19 +884,16 @@ class NotifierApp:
         try:
             # Опрашиваем очередь изменения статусов БД
             last_status = None
-            status_count = 0
             while True:
                 try:
                     last_status = self.status_queue.get_nowait()
-                    status_count += 1
+                    self.status_queue.task_done()
                 except queue.Empty:
                     break
             
             if last_status is not None:
                 is_connected, status_msg = last_status
                 self._update_status_ui(is_connected, status_msg)
-                for _ in range(status_count):
-                    self.status_queue.task_done()
         except Exception as e:
             log_debug("main.py: Ошибка при обработке очереди статусов: {}".format(e))
 
