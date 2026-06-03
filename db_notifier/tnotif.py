@@ -279,7 +279,7 @@ class NotifierApp:
             x = (sw - 40) // 2
             y = 35
             
-        self.overlay.geometry(f"40x40+{x}+{y}")
+        self.overlay.geometry("40x40+{}+{}".format(x, y))
         self.overlay_status_msg = "Инициализация..."
         self.tooltip_window = None
 
@@ -340,7 +340,7 @@ class NotifierApp:
         if y < 0: y = 0
         if y > sh - 40: y = sh - 40
 
-        self.overlay.geometry(f"40x40+{x}+{y}")
+        self.overlay.geometry("40x40+{}+{}".format(x, y))
         self._set_cached_coords(x, y)
         self._hide_tooltip()
 
@@ -375,7 +375,7 @@ class NotifierApp:
         # Позиционируем чуть ниже оверлея
         x = self.overlay.winfo_x() + 20 - (lbl.winfo_reqwidth() // 2)
         y = self.overlay.winfo_y() + 45
-        self.tooltip_window.geometry(f"+{x}+{y}")
+        self.tooltip_window.geometry("+{}+{}".format(x, y))
 
     def _hide_tooltip(self):
         if self.tooltip_window:
