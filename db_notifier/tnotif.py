@@ -16,7 +16,6 @@ import re
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import messagebox
-from PIL import Image, ImageDraw
 
 is_win = os.name == 'nt'
 

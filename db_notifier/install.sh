@@ -4,7 +4,7 @@ set -e
 
 echo "=== Установка системных зависимостей (требуются права sudo) ==="
 sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-tk python3-dev libpq-dev build-essential libjpeg-dev zlib1g-dev
+sudo apt-get install -y python3 python3-pip python3-tk python3-dev libpq-dev build-essential
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
