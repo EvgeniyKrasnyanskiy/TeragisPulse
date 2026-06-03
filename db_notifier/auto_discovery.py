@@ -186,11 +186,15 @@ def get_local_ip():
         s.close()
     return ip
 
+_net_scan_count = 0
+MAX_NET_SCAN_ATTEMPTS = 3
+
 def discover_db_host():
     """
     Основной метод автоопределения хоста базы данных.
     Каскад приоритетов: Хост из .env -> Кэш -> Локальный localhost -> Сканирование сети
     """
+    global _net_scan_count
     log_debug("--- Запуск автоопределения сервера БД ---")
     creds = get_db_credentials()
     log_debug("Используемые реквизиты авторизации: dbname={}, port={} (авторизация по паролю)".format(creds['dbname'], creds['port']))
@@ -224,11 +228,17 @@ def discover_db_host():
         return '127.0.0.1'
 
     # 4. Сканируем локальную сеть
+    if _net_scan_count >= MAX_NET_SCAN_ATTEMPTS:
+        log_debug("4. Проверка сканирования сети: Лимит попыток сканирования сети исчерпан ({}/{}). Пропускаем.".format(_net_scan_count, MAX_NET_SCAN_ATTEMPTS))
+        return None
+
     local_ip = get_local_ip()
-    log_debug("4. Проверка сканирования сети. Локальный IP: {}".format(local_ip))
+    log_debug("4. Проверка сканирования сети. Локальный IP: {}. Попытка {}/{}.".format(local_ip, _net_scan_count + 1, MAX_NET_SCAN_ATTEMPTS))
     if local_ip == '127.0.0.1':
         log_debug("-> Локальный IP 127.0.0.1, сканирование отменено.")
         return None # Мы не в сети
+
+    _net_scan_count += 1
 
     parts = local_ip.split('.')
     if len(parts) != 4:
