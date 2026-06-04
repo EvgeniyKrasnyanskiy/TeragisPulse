@@ -6,6 +6,15 @@ Teragis Notifier — АРМ-клиент уведомлений.
 """
 import os
 import sys
+import socket
+
+# Защита от запуска нескольких копий приложения (Single Instance Lock)
+try:
+    _singleton_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    _singleton_socket.bind(('127.0.0.1', 47285))
+except socket.error:
+    sys.exit(0)
+
 import platform
 import queue
 import shutil
