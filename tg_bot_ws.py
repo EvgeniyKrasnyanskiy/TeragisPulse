@@ -92,6 +92,7 @@ class TelegramBot:
         self._update_task = None
         self._last_was_empty = False
         self._connection_state = "stopped" # "connected" | "reconnecting" | "stopped"
+        self._update_lock = None
         
         # 7. Подготавливаем объект команд (БЕЗ await здесь)
         self.commands = BotCommands(
@@ -315,91 +316,95 @@ class TelegramBot:
         if not self._enabled and not force:
             return
         
-        # Восстановление данных, если память пуста
-        self._last_msg_id = self._last_msg_id or self._load_persisted_id()
-        self._last_msg_date = self._last_msg_date or self._load_persisted_date()
-        
-        try:
-            # 1. Сбор данных (SQL запрос в отдельном потоке, чтобы не фризить боту сеть)
-            # Теперь SQL-запрос выполняется в фоне, не мешая асинхронному циклу
-            if self.list_callback:
-                raw_data = await asyncio.to_thread(self.list_callback)
-            else:
-                raw_data = ""
+        if self._update_lock is None:
+            self._update_lock = asyncio.Lock()
+
+        async with self._update_lock:
+            # Восстановление данных, если память пуста
+            self._last_msg_id = self._last_msg_id or self._load_persisted_id()
+            self._last_msg_date = self._last_msg_date or self._load_persisted_date()
             
-            data = raw_data if isinstance(raw_data, dict) else {'list_text': raw_data}
-            list_text = data.get('list_text', '').strip()
-            
-            # ЛОГИКА: ПРОВЕРКА ПУСТОГО СПИСКА
-            is_empty = not list_text or "Пациентов нет" in list_text
-            
-            if is_empty:
-                data['list_text'] = f"📝 Список на {get_formatted_date()}:\nПациентов нет"
-                # Если мы уже один раз написали, что пациентов нет, и это не принудительный запуск (force), 
-                # и не новый день — просто выходим.
-                if hasattr(self, '_last_was_empty') and self._last_was_empty and not force:
-                    # Проверяем, не сменился ли день, прежде чем выйти
-                    current_date = datetime.now().strftime("%d.%m").strip()
-                    if self._last_msg_date == current_date:
-                        return 
-                self._last_was_empty = True
-            else:
-                self._last_was_empty = False
-
-            # 2. Формируем текст сообщения
-            new_text = self._build_message(data)
-
-            # 3. Проверка смены даты с защитой от одновременного доступа 
-            current_date = datetime.now().strftime("%d.%m").strip()
-            
-            is_new_day = False
-            with self._date_lock:
-                # Если дата в памяти есть И она не совпадает с текущей — это реальная смена дня
-                if self._last_msg_date is not None and self._last_msg_date != current_date:
-                    self._last_msg_id = None # Сбрасываем ID сообщения, чтобы создать новое сообщение
-                    is_new_day = True
-                    logger.info(f"[Bot_WS] Смена дня: {self._last_msg_date} -> {current_date}. ID сброшен.")
-
-                # Если даты вообще нет в памяти или она старая — обновляем дату
-                if self._last_msg_date != current_date:
-                    self._last_msg_date = current_date
-                    self._save_persisted_date(current_date)
-
-            # 4. Анти-спам
-            if new_text == self._last_text and not force and not is_new_day:
-                return
-
-            # 5. Отправка или редактирование
-            chat_id = int(self._admin_ids[0]) if self._admin_ids else 0
-            if self._last_msg_id is None:
-                # Отправляем новое, если ID нет (новый день или первый запуск без файла)
-                msg = await self.client.send_message(chat_id, new_text, parse_mode='html')
-                self._last_msg_id = msg.id
-                self._save_persisted_id(self._last_msg_id)
-                # print(f"[INFO][Bot_WS] Отправлено первое сообщение дня: {self._last_msg_id}")
-                logger.info(f"[Bot_WS] Отправлено первое сообщение дня: {self._last_msg_id}")
-            else:
-                # Редактируем старое
-                try:
-                    await self.client.edit_message(chat_id, self._last_msg_id, new_text, parse_mode='html')
-                    # print(f"[Bot_WS] Сообщение {self._last_msg_id} обновлено") # Лог в консоль
-                except Exception as e:
-                    err_str = str(e).lower()
-                    if "message_id_invalid" in err_str or "not found" in err_str:
-                        # Если сообщение удалили в чате — создаем заново
-                        # logger.warning(f"[Bot_WS]: Старое сообщение потеряно, создаю новое. Ошибка: {e}")
-                        msg = await self.client.send_message(chat_id, new_text, parse_mode='html')
-                        self._last_msg_id = msg.id
-                        self._save_persisted_id(self._last_msg_id)
-                        # print(f"[Bot_WS] Сообщение было удалено, создано новое: {self._last_msg_id}")
-                    else:
-                        # print(f"[Bot_WS] [{datetime.now().strftime('%H:%M:%S')}] Ошибка связи: {e}. Жду восстановления...")
-                        return
-
-            self._last_text = new_text
+            try:
+                # 1. Сбор данных (SQL запрос в отдельном потоке, чтобы не фризить боту сеть)
+                # Теперь SQL-запрос выполняется в фоне, не мешая асинхронному циклу
+                if self.list_callback:
+                    raw_data = await asyncio.to_thread(self.list_callback)
+                else:
+                    raw_data = ""
                 
-        except Exception as e:
-            logger.error(f"[Bot_WS] Непредвиденная ошибка в основном цикле обновления данных в Telegram: {e}")
+                data = raw_data if isinstance(raw_data, dict) else {'list_text': raw_data}
+                list_text = data.get('list_text', '').strip()
+                
+                # ЛОГИКА: ПРОВЕРКА ПУСТОГО СПИСКА
+                is_empty = not list_text or "Пациентов нет" in list_text
+                
+                if is_empty:
+                    data['list_text'] = f"📝 Список на {get_formatted_date()}:\nПациентов нет"
+                    # Если мы уже один раз написали, что пациентов нет, и это не принудительный запуск (force), 
+                    # и не новый день — просто выходим.
+                    if hasattr(self, '_last_was_empty') and self._last_was_empty and not force:
+                        # Проверяем, не сменился ли день, прежде чем выйти
+                        current_date = datetime.now().strftime("%d.%m").strip()
+                        if self._last_msg_date == current_date:
+                            return 
+                    self._last_was_empty = True
+                else:
+                    self._last_was_empty = False
+
+                # 2. Формируем текст сообщения
+                new_text = self._build_message(data)
+
+                # 3. Проверка смены даты с защитой от одновременного доступа 
+                current_date = datetime.now().strftime("%d.%m").strip()
+                
+                is_new_day = False
+                with self._date_lock:
+                    # Если дата в памяти есть И она не совпадает с текущей — это реальная смена дня
+                    if self._last_msg_date is not None and self._last_msg_date != current_date:
+                        self._last_msg_id = None # Сбрасываем ID сообщения, чтобы создать новое сообщение
+                        is_new_day = True
+                        logger.info(f"[Bot_WS] Смена дня: {self._last_msg_date} -> {current_date}. ID сброшен.")
+
+                    # Если даты вообще нет в памяти или она старая — обновляем дату
+                    if self._last_msg_date != current_date:
+                        self._last_msg_date = current_date
+                        self._save_persisted_date(current_date)
+
+                # 4. Анти-спам
+                if new_text == self._last_text and not force and not is_new_day:
+                    return
+
+                # 5. Отправка или редактирование
+                chat_id = int(self._admin_ids[0]) if self._admin_ids else 0
+                if self._last_msg_id is None:
+                    # Отправляем новое, если ID нет (новый день или первый запуск без файла)
+                    msg = await self.client.send_message(chat_id, new_text, parse_mode='html')
+                    self._last_msg_id = msg.id
+                    self._save_persisted_id(self._last_msg_id)
+                    # print(f"[INFO][Bot_WS] Отправлено первое сообщение дня: {self._last_msg_id}")
+                    logger.info(f"[Bot_WS] Отправлено первое сообщение дня: {self._last_msg_id}")
+                else:
+                    # Редактируем старое
+                    try:
+                        await self.client.edit_message(chat_id, self._last_msg_id, new_text, parse_mode='html')
+                        # print(f"[Bot_WS] Сообщение {self._last_msg_id} обновлено") # Лог в консоль
+                    except Exception as e:
+                        err_str = str(e).lower()
+                        if "message_id_invalid" in err_str or "not found" in err_str:
+                            # Если сообщение удалили в чате — создаем заново
+                            # logger.warning(f"[Bot_WS]: Старое сообщение потеряно, создаю новое. Ошибка: {e}")
+                            msg = await self.client.send_message(chat_id, new_text, parse_mode='html')
+                            self._last_msg_id = msg.id
+                            self._save_persisted_id(self._last_msg_id)
+                            # print(f"[Bot_WS] Сообщение было удалено, создано новое: {self._last_msg_id}")
+                        else:
+                            # print(f"[Bot_WS] [{datetime.now().strftime('%H:%M:%S')}] Ошибка связи: {e}. Жду восстановления...")
+                            return
+
+                self._last_text = new_text
+                    
+            except Exception as e:
+                logger.error(f"[Bot_WS] Непредвиденная ошибка в основном цикле обновления данных в Telegram: {e}")
 
     # --- РАЗДЕЛ 4: ВНЕШНИЕ СОБЫТИЯ (Пациент и БД) ---
 

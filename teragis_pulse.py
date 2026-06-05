@@ -2068,7 +2068,7 @@ class App(customtkinter.CTk):
         self.config(cursor="wait")
         self.update_idletasks()
 
-        # ИЗМЕНЕНИЕ 1: Оптимизированный запрос через CTE (значительно быстрее)
+        # ИЗМЕНЕНИЕ 1: Оптимизированный запрос через CTE с полями дозы
         query = '''
             WITH fraction_info AS (
                 SELECT 
@@ -2090,7 +2090,10 @@ class App(customtkinter.CTk):
                 tcs.name,                 -- Статус (календарный)
                 fi.fact_time,             -- Время (факт) из CTE
                 tc.note,
-                fi.detail_status          -- Детальный статус из CTE
+                fi.detail_status,         -- Детальный статус из CTE
+                ts.series_id,
+                ts.totaldose,
+                ts.fractionsnumber
             FROM tcalendar tc
             JOIN tseries ts ON tc.series_id = ts.series_id
             JOIN tcalendar_status tcs ON tc.calendar_status_id = tcs.calendar_status_id
@@ -2117,7 +2120,7 @@ class App(customtkinter.CTk):
 
         cal_win = customtkinter.CTkToplevel(master)
         cal_win.title(f"Календарь пациента: {patient_fio} (ID: {patient_id})")
-        self.center_window(cal_win, 900, 400)
+        self.center_window(cal_win, 950, 400)
         cal_win.resizable(False, False)
         
         if master != self:
@@ -2131,9 +2134,9 @@ class App(customtkinter.CTk):
         frame = customtkinter.CTkScrollableFrame(cal_win)
         frame.pack(fill="both", expand=True)
  
-        # ИЗМЕНЕНИЕ 2: добавлены заголовки
-        headers = ["Дата", "Время", "Серия", "Статус", "Время (факт)", "Примечание"]
-        col_widths = [90, 80, 130, 130, 110, 250]
+        # ИЗМЕНЕНИЕ 2: добавлены заголовки (включая "Доза")
+        headers = ["Дата", "Время", "Серия", "Статус", "Доза", "Время (факт)", "Примечание"]
+        col_widths = [90, 80, 130, 130, 140, 110, 250]
  
         for i, h in enumerate(headers):
             customtkinter.CTkLabel(
@@ -2145,8 +2148,42 @@ class App(customtkinter.CTk):
             ).grid(row=0, column=i, padx=5, sticky="w")
  
         if isinstance(data, list):
+            # Подсчет накопленной дозы по каждой строке
+            running_doses = []
+            series_completed_counts = {}
+            unique_series_ids = set()
+            total_completed_dose = 0.0
+            
+            for row in data:
+                if len(row) > 7 and row[7] is not None:
+                    unique_series_ids.add(row[7])
+                    
+            for row in data:
+                status_txt = str(row[3]) if row[3] else ""
+                is_completed = any(x in status_txt.lower() for x in ["отлечено", "completed", "заверш"])
+                
+                series_id = row[7]
+                totaldose = float(row[8]) if row[8] is not None else 0.0
+                fractionsnumber = int(row[9]) if row[9] is not None else 0
+                
+                single_dose = totaldose / fractionsnumber if fractionsnumber > 0 else 0.0
+                
+                if is_completed:
+                    series_completed_counts[series_id] = series_completed_counts.get(series_id, 0) + 1
+                    total_completed_dose += single_dose
+                    
+                current_series_dose = series_completed_counts.get(series_id, 0) * single_dose
+                running_doses.append((current_series_dose, total_completed_dose))
+
+            has_multiple_series = len(unique_series_ids) > 1
+            
+            def format_dose(val):
+                s = f"{val:.2f}"
+                if '.' in s:
+                    s = s.rstrip('0').rstrip('.')
+                return f"{s} Гр"
+
             for r, row in enumerate(data):
- 
                 clr = "white"
  
                 status_txt = str(row[3]) if row[3] else ""
@@ -2171,14 +2208,43 @@ class App(customtkinter.CTk):
                 elif any(x in status_txt.lower() for x in ["лечени", "on"]):
                     clr = "#00BFFF"
 
+                # Форматируем дозу
+                series_dose, total_dose = running_doses[r]
+                if has_multiple_series:
+                    dose_txt = f"{format_dose(series_dose)} (всего: {format_dose(total_dose)})"
+                else:
+                    dose_txt = format_dose(series_dose)
+
+                # Форматируем дату в DD.MM.YYYY
+                visit_date = row[0]
+                if isinstance(visit_date, (datetime, date)):
+                    date_str = visit_date.strftime('%d.%m.%Y')
+                else:
+                    date_str = str(visit_date) if visit_date else ""
+
+                # Форматируем время в HH:MM
+                visit_time = row[1]
+                if hasattr(visit_time, 'strftime'):
+                    time_str = visit_time.strftime('%H:%M')
+                else:
+                    time_str = str(visit_time)
+                    if len(time_str) >= 5 and time_str[2] == ':':
+                        time_str = time_str[:5]
+
+                # Формируем список отображаемых значений
+                display_vals = [
+                    date_str,
+                    time_str,
+                    str(row[2]) if row[2] else "",
+                    full_status_txt,
+                    dose_txt,
+                    str(row[4]) if row[4] else "",
+                    str(row[5]) if row[5] else "",
+                ]
+ 
                 # Отрисовка ячеек строки
-                for c in range(len(headers)):
-                    val = row[c]
-                    txt = str(val) if val else ""
-                    
-                    # Если это колонка Статус (индекс 3), используем расширенный текст и спец. цвет
+                for c, txt in enumerate(display_vals):
                     if c == 3:
-                        txt = full_status_txt
                         fg = clr
                     else:
                         fg = "white"
@@ -2190,7 +2256,7 @@ class App(customtkinter.CTk):
                         width=col_widths[c],
                         anchor="w"
                     ).grid(row=r+1, column=c, padx=5, sticky="w")
-
+ 
         self._bind_mousewheel_scroll(frame, frame)
 
     def transliterate(self, text):
