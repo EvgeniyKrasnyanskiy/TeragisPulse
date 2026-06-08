@@ -1210,22 +1210,22 @@ class App(customtkinter.CTk):
         FROM tcalendar tc
         INNER JOIN tseries ts ON tc.series_id = ts.series_id
         INNER JOIN tpatient tp ON ts.patient_id = tp.patient_id
-        WHERE tc.visitdate::date = CURRENT_DATE 
+        WHERE tc.visitdate::date = %s 
           AND tc.calendar_status_id = %s;
         """
         
-        query_count_planned = f"""
+        query_count_planned = """
         SELECT COUNT(DISTINCT ts.patient_id)
         FROM tcalendar tc
         JOIN tseries ts ON tc.series_id = ts.series_id
-        WHERE tc.visitdate::date = CURRENT_DATE AND tc.calendar_status_id = {self.STATUS_PLANNED_ID};
+        WHERE tc.visitdate::date = %s AND tc.calendar_status_id = %s;
         """
         
-        query_count_completed = f"""
+        query_count_completed = """
         SELECT COUNT(DISTINCT ts.patient_id)
         FROM tcalendar tc
         JOIN tseries ts ON tc.series_id = ts.series_id
-        WHERE tc.visitdate::date = CURRENT_DATE AND tc.calendar_status_id = {self.STATUS_COMPLETED_ID};
+        WHERE tc.visitdate::date = %s AND tc.calendar_status_id = %s;
         """
         
         try:
@@ -1243,7 +1243,7 @@ class App(customtkinter.CTk):
             # КРИТИЧЕСКАЯ ПРАВКА: СМЕНА ДНЯ
             if self.last_notified_date != today_date:
                 try:
-                    data_startup = execute_query(query_active, (self.STATUS_ON_TREATMENT_ID,))
+                    data_startup = execute_query(query_active, (today_date, self.STATUS_ON_TREATMENT_ID))
                     self.after(0, lambda: self._set_db_status(True))
                     
                     if data_startup and isinstance(data_startup, list):
@@ -1275,8 +1275,18 @@ class App(customtkinter.CTk):
                 self.low_patients_notified = False
                 self.last_notified_date = today_date
                 
+                # Сброс счетчиков для нового дня
+                self.last_completed_count = 0
+                self.last_remaining_count = 0
+                
                 # Сообщаем боту, что наступил новый день
-                if hasattr(self, 'tg_bot'):
+                if hasattr(self, 'tg_bot') and self.tg_bot:
+                    if hasattr(self.tg_bot, '_list_message_ids'):
+                        self.tg_bot._list_message_ids.clear()
+                    if hasattr(self.tg_bot, 'set_completed_count'):
+                        self.tg_bot.set_completed_count(0)
+                    if hasattr(self.tg_bot, 'set_shift_end'):
+                        self.tg_bot.set_shift_end("--:--")
                     self.tg_bot._last_msg_id = None
                     self.tg_bot._last_msg_date = None
                     if self.tg_bot._enabled and getattr(self.tg_bot, '_connection_state', '') == "connected":
@@ -1286,7 +1296,7 @@ class App(customtkinter.CTk):
             # --- ПЕРЕНЕСЕНО ВЫШЕ (бывший блок 2) ---
             # 1.1 ЛОГИКА ОПРЕДЕЛЕНИЯ АКТУАЛЬНОГО ПАЦИЕНТА (Теперь ПЕРЕД расчетом времени)
             try:
-                data_active = execute_query(query_active, (self.STATUS_ON_TREATMENT_ID,))
+                data_active = execute_query(query_active, (today_date, self.STATUS_ON_TREATMENT_ID))
                 self._set_db_status(True)
             except DatabaseError:
                 self._set_db_status(False)
@@ -1355,10 +1365,10 @@ class App(customtkinter.CTk):
             # 1. ПРОВЕРКА ОСТАТКА ПАЦИЕНТОВ (Planned) И РАСЧЕТ ОКОНЧАНИЯ
             try:
                 # Количество оставшихся
-                planned_res = execute_query(query_count_planned, ())
+                planned_res = execute_query(query_count_planned, (today_date, self.STATUS_PLANNED_ID))
                 
                 # Количество отлеченных (Задача: Отлечено: ХХ)
-                completed_res = execute_query(query_count_completed, ())
+                completed_res = execute_query(query_count_completed, (today_date, self.STATUS_COMPLETED_ID))
 
                 # 1.2 Суммарная экспозиция ОСТАВШИХСЯ (для расчета окончания)
                 query_exp_remaining = f'''
@@ -1369,13 +1379,13 @@ class App(customtkinter.CTk):
                         JOIN tseries ts ON tc.series_id = ts.series_id
                         JOIN tfield tf ON ts.series_id = tf.series_id
                         JOIN tplan tp ON tf.field_id = tp.field_id
-                        WHERE tc.visitdate = CURRENT_DATE
-                          AND tc.calendar_status_id IN ({self.STATUS_PLANNED_ID}, {self.STATUS_ON_TREATMENT_ID})
+                        WHERE tc.visitdate = %s
+                          AND tc.calendar_status_id IN (%s, %s)
                           AND tp.par_id = 'SH'
                         ORDER BY tf.field_id, tp.par_id, tp.insert_tms DESC
                     ) as tp_last
                 '''
-                exp_res = execute_query(query_exp_remaining, ())
+                exp_res = execute_query(query_exp_remaining, (today_date, self.STATUS_PLANNED_ID, self.STATUS_ON_TREATMENT_ID))
                 
                 self._set_db_status(True)
             except DatabaseError:
@@ -1457,10 +1467,11 @@ class App(customtkinter.CTk):
                 logger.debug(f"[TPulse] Ошибка расчета времени окончания: {e}")
                 self.after(0, lambda: self.shift_end_label.configure(text="🏁 Конец в: --:--"))
                 if hasattr(self, 'tg_bot') and self.tg_bot and self.tg_bot._enabled:
-                    if hasattr(self.tg_bot, 'set_shift_end'):
-                        if "--:--" != getattr(self, '_last_tg_shift_end', ''):
-                            self.tg_bot.set_shift_end("--:--")
-                            self._last_tg_shift_end = "--:--"
+                    if hasattr(self, 'tg_bot') and self.tg_bot._enabled:
+                        if hasattr(self.tg_bot, 'set_shift_end'):
+                            if "--:--" != getattr(self, '_last_tg_shift_end', ''):
+                                self.tg_bot.set_shift_end("--:--")
+                                self._last_tg_shift_end = "--:--"
 
 
             # 4. ОБНОВЛЕНИЕ ТЕКСТА В ИНТЕРФЕЙСЕ
@@ -1477,12 +1488,12 @@ class App(customtkinter.CTk):
         query = """
         SELECT ts.name FROM tcalendar tc
         JOIN tseries ts ON tc.series_id = ts.series_id
-        WHERE ts.patient_id = %s AND tc.visitdate::date = CURRENT_DATE
+        WHERE ts.patient_id = %s AND tc.visitdate::date = %s
           AND tc.calendar_status_id = %s;
         """
         try:
             try:
-                incomplete = execute_query(query, (patient_id, self.STATUS_PLANNED_ID))
+                incomplete = execute_query(query, (patient_id, datetime.now().date(), self.STATUS_PLANNED_ID))
                 self._set_db_status(True)
             except DatabaseError:
                 self._set_db_status(False)
